@@ -1,0 +1,20 @@
+<!-- www/upload.html -->
+<html>
+<head>
+    <title>File Upload</title>
+    <link rel="stylesheet" type="text/css" href="/css/style.css">
+</head>
+<body>
+    <div class="home-button">
+        <a href="/">Home</a>
+    </div>
+    <div class="container">
+        <h1>Upload a File</h1>
+        <form action="/upload_files" method="post" enctype="multipart/form-data">
+            <label for="file">Choose a file to upload:</label>
+            <input type="file" id="file" name="file">
+            <button type="submit">Upload File</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,22 @@
+con le modifiche consigliate abbiamo questo output:
+
+src/Request.cpp:89:12: error: no matching function for call to 'find'
+    return std::find(allowedMethods.begin(), allowedMethods.end(), method) != allowedMethods.end();
+           ^~~~~~~~~
+/usr/bin/../lib/gcc/x86_64-linux-gnu/12/../../../../include/c++/12/bits/streambuf_iterator.h:434:5: note: candidate template ignored: could not match 'istreambuf_iterator' against '__normal_iterator'
+    find(istreambuf_iterator<_CharT> __first,
+    ^
+1 error generated.
+src/Response.cpp:77:18: error: implicit instantiation of undefined template 'std::basic_ifstream<char>'
+   std::ifstream file(path.c_str(), std::ios::binary);
+                 ^
+/usr/bin/../lib/gcc/x86_64-linux-gnu/12/../../../../include/c++/12/iosfwd:116:11: note: template is declared here
+    class basic_ifstream;
+          ^
+src/Response.cpp:113:34: error: unused parameter 'req' [-Werror,-Wunused-parameter]
+void Response::serveCGI(Request* req) {
+                                 ^
+2 errors generated.
+make: *** [Makefile:7: all] Error 1
+
+una volta sistemati questi errori, testiamo i cambiamenti

@@ -12,7 +12,14 @@ private:
    size_t bytesSent;
    std::string response;
 
+   void setContentType(const std::string& path);
+   bool serveStaticFile(const std::string& path);
+   void serveErrorPage(int code);
+   void serveCGI(Request* req);
+   bool isCGIRequest(const std::string& path);
    void buildResponse();
+
+   static const std::map<std::string, std::string> mimeTypes;
 
 public:
    Response(Request* request);

@@ -61,6 +61,51 @@ void Server::handleNewConnection(int fd) {
     requests[clientFd] = new Request();
 }
 
+void Server::handleRequest(int clientFd) {
+   char buffer[4096];
+   ssize_t bytes = read(clientFd, buffer, sizeof(buffer) - 1);
+   
+   if (bytes <= 0) {
+       removeClient(clientFd);
+       return;
+   }
+   
+   buffer[bytes] = '\0';
+   Request* req = requests[clientFd];
+   
+   if (req->parse(std::string(buffer))) {
+       req->matchLocation(configs.front().getLocations());  // Per ora usiamo solo il primo server
+       responses[clientFd] = new Response(req);
+       
+       epoll_event ev;
+       ev.events = EPOLLOUT | EPOLLET;
+       ev.data.fd = clientFd;
+       epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
+   }
+}
+
+void Server::handleResponse(int clientFd) {
+   if (responses.find(clientFd) == responses.end()) {
+       removeClient(clientFd);
+       return;
+   }
+   
+   Response* res = responses[clientFd];
+   if (res->send(clientFd)) {
+       removeClient(clientFd);
+   }
+}
+
+void Server::removeClient(int clientFd) {
+    epoll_ctl(epollFd, EPOLL_CTL_DEL, clientFd, NULL);
+    close(clientFd);
+    
+    delete requests[clientFd];
+    delete responses[clientFd];
+    requests.erase(clientFd);
+    responses.erase(clientFd);
+}
+
 void Server::run() {
    epoll_event events[MAX_EVENTS];
    

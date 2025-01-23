@@ -1,0 +1,38 @@
+<!-- www/delete.html -->
+<html>
+<head>
+    <title>Delete File</title>
+    <link rel="stylesheet" type="text/css" href="/css/style.css">
+    <script>
+        const port = window.location.port || '80';
+        async function handleSubmit(event){
+            event.preventDefault();
+            if(document.getElementById('filepath').value==""){
+                alert("Parametri mancanti");
+            }else{
+                let url='http://' + window.location.hostname + ':' + port + '/uploads/'+document.getElementById('filepath').value;
+                await fetch(url,{
+                    method: 'DELETE',
+                }).then(response=>{
+                    if(response.ok) alert('File eliminato con successo');
+                    else alert('Errore durante l\'eliminazione del file');
+                });
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="home-button">
+        <a href="/">Home</a>
+    </div>
+    <div class="container">
+        <h1>Delete a File</h1>
+        <p>Per eliminare un file, inserisci il percorso:</p>
+        <form onsubmit="handleSubmit(event)">
+            <label for="filepath">File Path:</label>
+            <input type="text" id="filepath" required>
+            <button type="submit">Delete File</button>
+        </form>
+    </div>
+</body>
+</html>

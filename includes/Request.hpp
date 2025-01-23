@@ -23,6 +23,9 @@ private:
    bool chunked;
    ServerConfig* matchedServer;
 
+   std::string resolvedPath;
+   LocationConfig* matchedLocation;
+
    void parseStartLine(const std::string& line);
    void parseHeader(const std::string& line);
    bool parseChunk();
@@ -38,4 +41,9 @@ public:
    const std::string& getBody() const;
    bool isComplete() const;
    ServerConfig* getMatchedServer() const;
+
+   void matchLocation(const std::vector<LocationConfig>& locations);
+   const std::string& getResolvedPath() const;
+   LocationConfig* getMatchedLocation() const;
+   bool isMethodAllowed() const;
 };

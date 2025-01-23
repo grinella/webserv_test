@@ -13,6 +13,7 @@ private:
        ERROR
    };
 
+   Request* request;
    State state;
    std::string method;
    std::string uri;
@@ -29,6 +30,7 @@ private:
    void parseStartLine(const std::string& line);
    void parseHeader(const std::string& line);
    bool parseChunk();
+   void generateDirectoryListing(const std::string& path);
 
 public:
    Request();

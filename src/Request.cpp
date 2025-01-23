@@ -67,32 +67,33 @@ void Request::parseHeader(const std::string& line) {
 void Request::matchLocation(const std::vector<LocationConfig>& locations) {
     size_t longestMatch = 0;
     
+    // Normalizza URI rimuovendo trailing slash
+    std::string normalizedUri = uri;
+    if (normalizedUri.length() > 1 && normalizedUri[normalizedUri.length()-1] == '/') {
+        normalizedUri = normalizedUri.substr(0, normalizedUri.length()-1);
+    }
+    
     for (size_t i = 0; i < locations.size(); ++i) {
         const LocationConfig& loc = locations[i];
         std::string locPath = loc.getPath();
         
-        if (uri.substr(0, locPath.length()) == locPath && locPath.length() > longestMatch) {
+        if (normalizedUri.substr(0, locPath.length()) == locPath && locPath.length() > longestMatch) {
             longestMatch = locPath.length();
             matchedLocation = const_cast<LocationConfig*>(&loc);
             
-            std::string requestPath = uri;
-            // Se l'URI è /, usa index.html
-            if (requestPath == "/") {
-                requestPath = "/index.html";
-            }
-            
-            // Se la root è specificata nella location, usala
-            if (!matchedLocation->getRoot().empty()) {
-                resolvedPath = matchedLocation->getRoot() + requestPath;
+            if (normalizedUri == "/") {
+                resolvedPath = "www/index.html";
+            } else if (!matchedLocation->getRoot().empty()) {
+                resolvedPath = matchedLocation->getRoot();
+                if (normalizedUri != locPath) {
+                    resolvedPath += normalizedUri.substr(locPath.length());
+                }
             } else {
-                resolvedPath = "www" + requestPath;
+                resolvedPath = "www" + normalizedUri;
             }
         }
     }
-    
-    // Debug output
-    std::cout << "URI: " << uri << std::endl;
-    std::cout << "Resolved path: " << resolvedPath << std::endl;
+    std::cout << "URI: " << uri << "\nResolved path: " << resolvedPath << std::endl;
 }
 
 bool Request::isMethodAllowed() const {

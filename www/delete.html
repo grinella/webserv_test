@@ -6,19 +6,34 @@
     <script>
         const port = window.location.port || '80';
         async function handleSubmit(event){
-            event.preventDefault();
-            if(document.getElementById('filepath').value==""){
-                alert("Parametri mancanti");
-            }else{
-                let url='http://' + window.location.hostname + ':' + port + '/uploads/'+document.getElementById('filepath').value;
-                await fetch(url,{
-                    method: 'DELETE',
-                }).then(response=>{
-                    if(response.ok) alert('File eliminato con successo');
-                    else alert('Errore durante l\'eliminazione del file');
-                });
-            }
+        event.preventDefault();
+        const filepath = document.getElementById('filepath').value;
+        if(filepath == ""){
+            alert("Parametri mancanti");
+            return;
         }
+        
+        // Controllo se è una cartella (non ha estensione)
+        if(!filepath.includes('.')) {
+            alert("Impossibile eliminare le cartelle. Seleziona un file");
+            return;
+        }
+
+        let url='http://' + window.location.hostname + ':' + port + '/uploads/'+filepath;
+        try {
+            const response = await fetch(url, {
+                method: 'DELETE',
+            });
+            if(response.ok) {
+                alert('File eliminato con successo');
+            } else {
+                alert('Errore durante l\'eliminazione del file');
+            }
+        } catch(error) {
+            console.error('Error:', error);
+            alert('Errore durante l\'eliminazione del file');
+        }
+    }
     </script>
 </head>
 <body>

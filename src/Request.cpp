@@ -2,6 +2,7 @@
 #include <sstream>
 #include <algorithm> // per std::find
 #include <iostream>
+#include <sys/stat.h>
 
 Request::Request() : state(READ_METHOD), contentLength(0), chunked(false), matchedServer(NULL) {}
 
@@ -15,6 +16,9 @@ bool Request::parse(const std::string& data) {
                 state = READ_BODY;
                 if (!chunked && contentLength == 0) {
                     state = COMPLETE;
+                    if(getMethod() == "DELETE")
+                        handleDelete();
+                    std::cout << "ciao1" << std::endl;
                     return true;
                 }
             }
@@ -33,6 +37,7 @@ bool Request::parse(const std::string& data) {
                 body += line + "\n";
                 if (!chunked && body.length() >= contentLength) {
                     state = COMPLETE;
+                    std::cout << "ciao" << std::endl;
                     return true;
                 }
                 break;
@@ -43,8 +48,36 @@ bool Request::parse(const std::string& data) {
     return false;
 }
 
+void Request::handleDelete() {
+    struct stat pathStat;
+    deleteStatus = 200; // Default a success
+
+    uri = "www" + uri;
+    if (stat(uri.c_str(), &pathStat) != 0) {
+        std::cerr << "File or directory does not exist: " << resolvedPath << std::endl;
+        deleteStatus = 404;
+        return;
+    }
+
+    if (S_ISDIR(pathStat.st_mode)) {
+        std::cerr << "Cannot delete a directory via DELETE request: " << resolvedPath << std::endl;
+        deleteStatus = 403;
+        return;
+    }
+
+    if (std::remove(uri.c_str()) != 0) {
+        perror("Error deleting file");
+        deleteStatus = 500;
+        return;
+    }
+
+    std::cout << "File deleted successfully: " << uri << std::endl;
+    // Manteniamo deleteStatus a 200
+}
+
 void Request::parseStartLine(const std::string& line) {
     std::istringstream iss(line);
+    std::cout << "line=" << line << std::endl;
     iss >> method >> uri >> httpVersion;
     if (method.empty() || uri.empty() || httpVersion.empty())
         state = ERROR;
@@ -72,8 +105,8 @@ void Request::matchLocation(const std::vector<LocationConfig>& locations) {
     if (normalizedUri.length() > 1 && normalizedUri[normalizedUri.length()-1] == '/') {
         normalizedUri = normalizedUri.substr(0, normalizedUri.length()-1);
     }
-    
-    for (size_t i = 0; i < locations.size(); ++i) {
+    size_t i = 0;
+    while ( i < locations.size()) {
         const LocationConfig& loc = locations[i];
         std::string locPath = loc.getPath();
         
@@ -86,12 +119,13 @@ void Request::matchLocation(const std::vector<LocationConfig>& locations) {
             } else if (!matchedLocation->getRoot().empty()) {
                 resolvedPath = matchedLocation->getRoot();
                 if (normalizedUri != locPath) {
-                    resolvedPath += normalizedUri.substr(locPath.length());
+                    resolvedPath += normalizedUri.substr(locPath.length() + 1);
                 }
             } else {
                 resolvedPath = "www" + normalizedUri;
             }
         }
+        ++i;
     }
     std::cout << "URI: " << uri << "\nResolved path: " << resolvedPath << std::endl;
 }
@@ -105,3 +139,11 @@ bool Request::isMethodAllowed() const {
 
 const std::string& Request::getResolvedPath() const { return resolvedPath; }
 LocationConfig* Request::getMatchedLocation() const { return matchedLocation; }
+
+const std::string& Request::getMethod() const{
+    return this->method;
+}
+
+const std::string& Request::getBody() const{
+    return this->body;
+}

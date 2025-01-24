@@ -2,6 +2,7 @@
 #include <sstream>
 #include <unistd.h>
 #include <fstream>  // per std::ifstream
+#include <iostream>  // per std::cout
 
 const std::map<std::string, std::string> Response::mimeTypes = {
    {".html", "text/html"},
@@ -13,16 +14,29 @@ const std::map<std::string, std::string> Response::mimeTypes = {
 };
 
 Response::Response(Request* req) : statusCode(200), statusMessage("OK"), bytesSent(0) {
-   request = req;
-   if (!req->getMatchedLocation()) {
-       serveErrorPage(404);
-       return;
-   }
+    request = req;
+    
+    if (!req->getMatchedLocation()) {
+        serveErrorPage(404);
+        return;
+    }
 
-   if (!req->isMethodAllowed()) {
-       serveErrorPage(405);
-       return;
-   }
+    if (!req->isMethodAllowed()) {
+        serveErrorPage(405);
+        return;
+    }
+
+    if (req->getMethod() == "DELETE") {
+        // Usa lo status del DELETE
+        int deleteStatus = req->getDeleteStatus();
+        if (deleteStatus != 200) {
+            serveErrorPage(deleteStatus);
+        } else {
+            setStatus(200, "OK");
+            setBody("File deleted successfully");
+        }
+        return;
+    }
 
    std::string path = req->getResolvedPath();
    if (isCGIRequest(path)) {
@@ -57,8 +71,11 @@ bool Response::send(int fd) {
    ssize_t sent = write(fd, response.c_str() + bytesSent, response.length() - bytesSent);
    if (sent == -1)
        return false;
-       
+    
+    std::cout << response << std::endl;
    bytesSent += sent;
+   // cout true or false
+   
    return bytesSent >= response.length();
 }
 
@@ -164,55 +181,6 @@ void Response::setHeader(const std::string& key, const std::string& value) {
 void Response::setBody(const std::string& content) {
    body = content;
 }
-
-bool Response::handleGet() {
-    if (request->getMethod() != "GET") return false;
-    
-    std::string path = request->getResolvedPath();
-    struct stat st;
-    
-    if (stat(path.c_str(), &st) == 0) {
-        if (S_ISDIR(st.st_mode)) {
-            if (request->getMatchedLocation()->getAutoindex()) {
-                generateDirectoryListing(path);
-                return true;
-            }
-            return false;
-        }
-    }
-
-    return serveStaticFile(path);
-}
-
-bool Response::handlePost() {
-   if (request->getMethod() != "POST") return false;
-   
-   std::string boundary = request->getHeader("Content-Type");
-   size_t pos = boundary.find("boundary=");
-   if (pos == std::string::npos) {
-       serveErrorPage(400);
-       return false;
-   }
-   boundary = "--" + boundary.substr(pos + 9);
-
-   std::string content = request->getBody();
-   std::string filename = parseMultipartData(boundary);
-   
-   if (filename.empty()) {
-       serveErrorPage(400);
-       return false;
-   }
-
-   if (!uploadFile(content, filename)) {
-       serveErrorPage(500);
-       return false;
-   }
-
-   body = "<html><body><h1>File uploaded successfully</h1></body></html>";
-   headers["Content-Type"] = "text/html";
-   return true;
-}
-
 std::string Response::parseMultipartData(const std::string& boundary) {
    std::string content = request->getBody();
    size_t start = content.find(boundary);
@@ -226,46 +194,4 @@ std::string Response::parseMultipartData(const std::string& boundary) {
    if (filenameEnd == std::string::npos) return "";
 
    return content.substr(filenamePos, filenameEnd - filenamePos);
-}
-
-bool Response::uploadFile(const std::string& content, const std::string& filename) {
-   std::string uploadPath = "/www/uploads/";
-   struct stat st;
-   
-   if (stat(uploadPath.c_str(), &st) != 0) {
-       if (mkdir(uploadPath.c_str(), 0777) != 0) return false;
-   }
-
-   std::string filePath = uploadPath + filename;
-   std::ofstream outFile(filePath.c_str(), std::ios::binary);
-   if (!outFile) return false;
-
-   outFile.write(content.c_str(), content.length());
-   return !outFile.fail();
-}
-
-bool Response::handleDelete() {
-    if (request->getMethod() != "DELETE") return false;
-    
-    std::string path = request->getResolvedPath();
-    struct stat st;
-    
-    if (stat(path.c_str(), &st) != 0) {
-        serveErrorPage(404);
-        return false;
-    }
-
-    if (!S_ISREG(st.st_mode)) {
-        serveErrorPage(400);
-        return false;
-    }
-
-    if (remove(path.c_str()) != 0) {
-        serveErrorPage(500);
-        return false;
-    }
-
-    body = "<html><body><h1>File deleted successfully</h1></body></html>";
-    headers["Content-Type"] = "text/html";
-    return true;
 }

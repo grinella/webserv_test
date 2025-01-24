@@ -3,7 +3,7 @@
 #include <map>
 #include "ServerConfig.hpp"
 
-class Request {
+class Request{
 private:
    enum State {
        READ_METHOD,
@@ -27,6 +27,8 @@ private:
    std::string resolvedPath;
    LocationConfig* matchedLocation;
 
+   int deleteStatus; // per lo stato del DELETE, se è andato a buon fine o meno
+
    void parseStartLine(const std::string& line);
    void parseHeader(const std::string& line);
    bool parseChunk();
@@ -48,4 +50,7 @@ public:
    const std::string& getResolvedPath() const;
    LocationConfig* getMatchedLocation() const;
    bool isMethodAllowed() const;
+   void handlePost();
+   void handleDelete();
+   int getDeleteStatus() const { return deleteStatus; }
 };

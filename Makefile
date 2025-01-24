@@ -5,7 +5,6 @@ all:
 	@clear
 	@echo Creating objects...
 	@c++ $(FLAGS) src/*.cpp -o $(NAME)
-	@sleep 0.2
 	@echo Done ✓
 	@echo "\033[0;31m    *    .  *     ✦    .         ★       .    *       ✦       .    * ✦           .     ★    "
 	@echo "\033[0;33m     ____    __    ____  _______ .______        _______. _______ .______     ____    ____   "
@@ -23,7 +22,6 @@ fclean:
 	@echo Cleaning...
 	@-rm -f $(NAME)
 	@-rm -rf $(NAME).dSYM
-	@sleep 0.4
 	@echo Done ✓
 
 re: fclean all

@@ -3,6 +3,38 @@
 <head>
     <title>File Upload</title>
     <link rel="stylesheet" type="text/css" href="/css/style.css">
+    <script>
+        async function handleSubmit(event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('file');
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("Please select a file to upload");
+                return;
+            }
+
+            const formData = new FormData(event.target);
+            const port = window.location.port || '80';
+            const url = 'http://' + window.location.hostname + ':' + port + '/upload_files';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert('File uploaded successfully');
+                    window.location.href = '/';
+                } else {
+                    alert('Error uploading file: ' + response.statusText);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error uploading file');
+            }
+        }
+    </script>
 </head>
 <body>
     <div class="home-button">
@@ -10,9 +42,9 @@
     </div>
     <div class="container">
         <h1>Upload a File</h1>
-        <form action="/upload_files" method="post" enctype="multipart/form-data">
+        <form onsubmit="handleSubmit(event)" enctype="multipart/form-data">
             <label for="file">Choose a file to upload:</label>
-            <input type="file" id="file" name="file">
+            <input type="file" id="file" name="file" required>
             <button type="submit">Upload File</button>
         </form>
     </div>

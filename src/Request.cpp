@@ -150,3 +150,5 @@ const std::string& Request::getMethod() const{
 const std::string& Request::getBody() const{
     return this->body;
 }
+
+// andra' aggiunto handlePost()

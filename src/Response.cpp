@@ -48,6 +48,19 @@ Response::Response(Request* req) : statusCode(200), statusMessage("OK"), bytesSe
         return;
     }
 
+    if (req->getMethod() == "POST") {
+        try {
+            req->handlePost();
+            setStatus(201, "Created");
+            setBody("File uploaded successfully");
+            headers["Content-Type"] = "text/plain";
+        } catch (const std::exception& e) {
+            std::cerr << "POST Error: " << e.what() << std::endl;
+            serveErrorPage(500);
+        }
+        return;
+    }
+
    std::string path = req->getResolvedPath();
    if (isCGIRequest(path)) {
        serveCGI(req);
@@ -135,6 +148,7 @@ void Response::serveErrorPage(int code) {
    switch (code) {
        case 404: statusMessage = "Not Found"; break;
        case 405: statusMessage = "Method Not Allowed"; break;
+       case 413: statusMessage = "Payload Too Large"; break;
        case 500: statusMessage = "Internal Server Error"; break;
        default: statusMessage = "Unknown Error";
    }
@@ -379,3 +393,44 @@ std::string Response::parseMultipartData(const std::string& boundary) {
 
    return content.substr(filenamePos, filenameEnd - filenamePos);
 }
+
+// bool Response::uploadFile(const std::string& fileContent, const std::string& filename) {
+//     std::string uploadDir = "www/uploads/";
+//     std::string fullPath = uploadDir + filename;
+    
+//     // Verifica che la directory esista
+//     struct stat st;
+//     if (stat(uploadDir.c_str(), &st) != 0) {
+//         if (mkdir(uploadDir.c_str(), 0755) != 0) {
+//             return false;
+//         }
+//     }
+    
+//     // Crea il file
+//     std::ofstream file(fullPath.c_str(), std::ios::binary);
+//     if (!file) {
+//         return false;
+//     }
+    
+//     file.write(fileContent.c_str(), fileContent.length());
+//     file.close();
+    
+//     return true;
+// }
+
+// void Response::setCookie(const std::string& name, const std::string& value,
+//                         const std::string& path, int maxAge,
+//                         bool secure, bool httpOnly) {
+//     std::string cookie = name + "=" + value;
+//     cookie += "; Path=" + path;
+//     if (maxAge >= 0) {
+//         cookie += "; Max-Age=" + intToString(maxAge);
+//     }
+//     if (secure) {
+//         cookie += "; Secure";
+//     }
+//     if (httpOnly) {
+//         cookie += "; HttpOnly";
+//     }
+//     headers["Set-Cookie"] = cookie;
+// }

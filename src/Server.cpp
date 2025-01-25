@@ -1,4 +1,5 @@
 #include "../includes/Server.hpp"
+#include <iostream>
 
 Server::Server(const std::vector<ServerConfig>& configs) : configs(configs) {
    epollFd = epoll_create1(0);
@@ -61,28 +62,74 @@ void Server::handleNewConnection(int fd) {
     requests[clientFd] = new Request();
 }
 
-void Server::handleRequest(int clientFd) {
-   char buffer[4096];
-   ssize_t bytes = read(clientFd, buffer, sizeof(buffer) - 1);
-   
-   if (bytes <= 0) {
-       removeClient(clientFd);
-       return;
-   }
-   
-   buffer[bytes] = '\0';
-   Request* request = requests[clientFd];
-   
-   if (request->parse(std::string(buffer))) {
-       request->matchLocation(configs.front().getLocations());  // Per ora usiamo solo il primo server
-       responses[clientFd] = new Response(request);
-       
-       epoll_event ev;
-       ev.events = EPOLLOUT | EPOLLET;
-       ev.data.fd = clientFd;
-       epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
-   }
+// aggiunto con questo ultimo push 18:12
+void Request::setMatchedServer(ServerConfig* server) {
+    if (!server) {
+        throw std::runtime_error("Attempting to set null server configuration");
+    }
+    matchedServer = server;
 }
+
+void Server::handleRequest(int clientFd) {
+    // Prendiamo il client_max_body_size dal config
+    size_t maxBodySize = configs.front().getClientMaxBodySize();
+    // Allochiamo un buffer della dimensione appropriata
+    char* buffer = new char[maxBodySize + 1];  // +1 per il terminatore null
+    std::string requestData;
+    
+    try {
+        while (true) {
+            ssize_t bytes = read(clientFd, buffer, maxBodySize);
+            if (bytes <= 0) {
+                if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    break;
+                }
+                delete[] buffer;
+                removeClient(clientFd);
+                return;
+            }
+            
+            // Verifica che non stiamo superando il limite massimo
+            if (requestData.length() + bytes > maxBodySize) {
+                delete[] buffer;
+                // Rispondi con un errore 413 (Payload Too Large)
+                Request* request = requests[clientFd];
+                request->setMatchedServer(&configs.front());
+                responses[clientFd] = new Response(request);
+                responses[clientFd]->setStatus(413, "Payload Too Large");
+                responses[clientFd]->setBody("Request entity too large");
+                
+                epoll_event ev;
+                ev.events = EPOLLOUT | EPOLLET;
+                ev.data.fd = clientFd;
+                epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
+                return;
+            }
+            
+            buffer[bytes] = '\0';
+            requestData += std::string(buffer, bytes);
+            
+            Request* request = requests[clientFd];
+            request->setMatchedServer(&configs.front());
+            
+            if (request->parse(requestData)) {
+                request->matchLocation(configs.front().getLocations());
+                responses[clientFd] = new Response(request);
+                
+                epoll_event ev;
+                ev.events = EPOLLOUT | EPOLLET;
+                ev.data.fd = clientFd;
+                epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
+                break;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error handling request: " << e.what() << std::endl;
+    }
+    
+    delete[] buffer;  // Libera la memoria del buffer
+}
+// fino a qui aggiunto e modificato con questo ultimo push 18:12
 
 void Server::handleResponse(int clientFd) {
    if (responses.find(clientFd) == responses.end()) {

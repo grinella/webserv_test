@@ -1,0 +1,16 @@
+line=GET /delete.html HTTP/1.1
+ciao1
+URI: /delete.html
+Resolved path: www/delete.html
+line=GET /css/style.css HTTP/1.1
+ciao1
+URI: /css/style.css
+Resolved path: www/css/style.css
+line=GET /img/shrek.jpeg HTTP/1.1
+ciao1
+URI: /img/shrek.jpeg
+Resolved path: www/img/shrek.jpeg
+line=DELETE /uploads/test1.txt HTTP/1.1
+ciao1
+URI: www/uploads/test1.txt
+Resolved path: 

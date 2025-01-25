@@ -71,11 +71,11 @@ void Server::handleRequest(int clientFd) {
    }
    
    buffer[bytes] = '\0';
-   Request* req = requests[clientFd];
+   Request* request = requests[clientFd];
    
-   if (req->parse(std::string(buffer))) {
-       req->matchLocation(configs.front().getLocations());  // Per ora usiamo solo il primo server
-       responses[clientFd] = new Response(req);
+   if (request->parse(std::string(buffer))) {
+       request->matchLocation(configs.front().getLocations());  // Per ora usiamo solo il primo server
+       responses[clientFd] = new Response(request);
        
        epoll_event ev;
        ev.events = EPOLLOUT | EPOLLET;

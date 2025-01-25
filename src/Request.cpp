@@ -3,6 +3,9 @@
 #include <algorithm> // per std::find
 #include <iostream>
 #include <sys/stat.h>
+#include <cstdlib>
+#include <cstdio>
+
 
 Request::Request() : state(READ_METHOD), contentLength(0), chunked(false), matchedServer(NULL) {}
 
@@ -52,8 +55,9 @@ void Request::handleDelete() {
     struct stat pathStat;
     deleteStatus = 200; // Default a success
 
-    uri = "www" + uri;
-    if (stat(uri.c_str(), &pathStat) != 0) {
+    // Non modificare l'URI qui
+    std::string fullPath = "www" + uri;
+    if (stat(fullPath.c_str(), &pathStat) != 0) {
         std::cerr << "File or directory does not exist: " << resolvedPath << std::endl;
         deleteStatus = 404;
         return;
@@ -65,14 +69,13 @@ void Request::handleDelete() {
         return;
     }
 
-    if (std::remove(uri.c_str()) != 0) {
+    if (std::remove(fullPath.c_str()) != 0) {
         perror("Error deleting file");
         deleteStatus = 500;
         return;
     }
 
-    std::cout << "File deleted successfully: " << uri << std::endl;
-    // Manteniamo deleteStatus a 200
+    std::cout << "File deleted successfully: " << fullPath << std::endl;
 }
 
 void Request::parseStartLine(const std::string& line) {

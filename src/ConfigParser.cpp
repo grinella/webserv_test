@@ -1,5 +1,7 @@
 #include "../includes/ConfigParser.hpp"
 #include "../includes/Utils.hpp"
+// include for std::atoi
+#include <cstdlib>
 
 ConfigParser::ConfigParser(const std::string& filename) : configFile(filename) {
     parseFile();

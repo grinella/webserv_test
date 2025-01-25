@@ -1,19 +1,29 @@
 #include "../includes/Response.hpp"
 #include <sstream>
 #include <unistd.h>
-#include <fstream>  // per std::ifstream
-#include <iostream>  // per std::cout
+#include <fstream>
+#include <iostream>
+#include <cstdlib>     // Per exit
+#include <cstring>     // Per strdup
+#include <sys/types.h> // Per pid_t
+#include <sys/wait.h>  // Per waitpid
 
-const std::map<std::string, std::string> Response::mimeTypes = {
-   {".html", "text/html"},
-   {".css", "text/css"},
-   {".js", "application/javascript"},
-   {".jpg", "image/jpeg"},
-   {".png", "image/png"},
-   {".ico", "image/x-icon"}
-};
+std::map<std::string, std::string> Response::mimeTypes;
+
+void Response::initMimeTypes() {
+    mimeTypes.insert(std::make_pair(".html", "text/html"));
+    mimeTypes.insert(std::make_pair(".css", "text/css"));
+    mimeTypes.insert(std::make_pair(".js", "application/javascript"));
+    mimeTypes.insert(std::make_pair(".jpg", "image/jpeg"));
+    mimeTypes.insert(std::make_pair(".png", "image/png"));
+    mimeTypes.insert(std::make_pair(".ico", "image/x-icon"));
+    mimeTypes.insert(std::make_pair(".php", "application/x-httpd-php"));
+    mimeTypes.insert(std::make_pair(".py", "text/x-python"));
+    mimeTypes.insert(std::make_pair(".sh", "application/x-sh"));
+}
 
 Response::Response(Request* req) : statusCode(200), statusMessage("OK"), bytesSent(0) {
+    initMimeTypes();
     request = req;
     
     if (!req->getMatchedLocation()) {
@@ -72,7 +82,7 @@ bool Response::send(int fd) {
    if (sent == -1)
        return false;
     
-    std::cout << response << std::endl;
+    // std::cout << response << std::endl;
    bytesSent += sent;
    // cout true or false
    
@@ -114,6 +124,12 @@ bool Response::serveStaticFile(const std::string& path) {
     return true;
 }
 
+std::string Response::intToString(int number) {
+    std::ostringstream ss;
+    ss << number;
+    return ss.str();
+}
+
 void Response::serveErrorPage(int code) {
    statusCode = code;
    switch (code) {
@@ -123,9 +139,9 @@ void Response::serveErrorPage(int code) {
        default: statusMessage = "Unknown Error";
    }
 
-   std::string errorPath = "www/" + std::to_string(code) + ".html";
+   std::string errorPath = "www/" + intToString(code) + ".html";
    if (!serveStaticFile(errorPath)) {
-       body = "<html><body><h1>" + std::to_string(code) + " " + statusMessage + "</h1></body></html>";
+       body = "<html><body><h1>" + intToString(code) + " " + statusMessage + "</h1></body></html>";
        headers["Content-Type"] = "text/html";
    }
 }
@@ -163,10 +179,178 @@ void Response::generateDirectoryListing(const std::string& path) {
     headers["Content-Type"] = "text/html";
 }
 
+std::string Response::getCGIInterpreter(const std::string& extension) {
+    const LocationConfig* loc = request->getMatchedLocation();
+    if (!loc) return "";
+
+    const std::vector<std::string>& extensions = loc->getCgiExtensions();
+    const std::vector<std::string>& paths = loc->getCgiPaths();
+    
+    for (size_t i = 0; i < extensions.size(); ++i) {
+        if (extension == extensions[i] && i < paths.size()) {
+            return paths[i];
+        }
+    }
+    return "";
+}
+
+const std::string& Request::getUri() const {
+    return this->uri;
+}
+
+void Response::setupCGIEnv(std::map<std::string, std::string>& env, const std::string& scriptPath) {
+    env["GATEWAY_INTERFACE"] = "CGI/1.1";
+    env["SERVER_PROTOCOL"] = "HTTP/1.1";
+    env["REQUEST_METHOD"] = request->getMethod();
+    env["SCRIPT_FILENAME"] = scriptPath;
+    env["SCRIPT_NAME"] = request->getUri();
+    env["PATH_INFO"] = "";
+    env["PATH_TRANSLATED"] = scriptPath;
+    env["QUERY_STRING"] = "";  // TODO: Implementare il parsing della query string
+    env["CONTENT_TYPE"] = "text/html";
+    env["CONTENT_LENGTH"] = "0";
+    
+    // Se ci sono headers della richiesta specifici per CGI, aggiungili qui
+    // HTTP_* headers
+}
+
+char* Response::myStrdup(const char* str) {
+    size_t len = strlen(str) + 1;
+    char* new_str = new char[len];
+    std::strcpy(new_str, str);
+    return new_str;
+}
+
+std::string Response::executeCGI(const std::string& interpreter, const std::string& scriptPath,
+                                const std::map<std::string, std::string>& env) {
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        throw std::runtime_error("Failed to create pipe");
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        throw std::runtime_error("Fork failed");
+    }
+
+    if (pid == 0) { // Child process
+        close(pipefd[0]); // Close read end
+        dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
+        close(pipefd[1]);
+
+        // Prepare environment variables for execve
+        std::vector<std::string> envStrs;
+        for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end(); ++it) {
+            envStrs.push_back(it->first + "=" + it->second);
+        }
+
+        char** envp = new char*[envStrs.size() + 1];
+        for (size_t i = 0; i < envStrs.size(); ++i) {
+            envp[i] = myStrdup(envStrs[i].c_str());
+        }
+        envp[envStrs.size()] = NULL;
+
+        // Prepare arguments for execve
+        char* const args[] = {
+            const_cast<char*>(interpreter.c_str()),
+            const_cast<char*>(scriptPath.c_str()),
+            NULL
+        };
+
+        execve(interpreter.c_str(), args, envp);
+        
+        // If execve fails
+        for (size_t i = 0; envp[i] != NULL; ++i) {
+            delete[] envp[i];
+        }
+        delete[] envp;
+        
+        exit(1);
+    }
+
+    // Parent process
+    close(pipefd[1]); // Close write end
+
+    // Read output from pipe
+    std::string output;
+    char buffer[4096];
+    ssize_t bytes_read;
+    
+    while ((bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes_read] = '\0';
+        output += buffer;
+    }
+    
+    close(pipefd[0]);
+
+    // Wait for child process
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+        throw std::runtime_error("CGI script execution failed");
+    }
+
+    return output;
+}
+
 void Response::serveCGI(Request* req) {
-   // TODO: Implement CGI handling
-   (void)req;  // per evitare il warning unused parameter
-   serveErrorPage(500);
+    try {
+        std::string path = req->getResolvedPath();
+        size_t dot = path.find_last_of(".");
+        if (dot == std::string::npos) {
+            throw std::runtime_error("No file extension found");
+        }
+
+        std::string extension = path.substr(dot);
+        std::string interpreter = getCGIInterpreter(extension);
+        if (interpreter.empty()) {
+            throw std::runtime_error("No interpreter found for extension: " + extension);
+        }
+
+        std::map<std::string, std::string> env;
+        setupCGIEnv(env, path);
+
+        std::string output = executeCGI(interpreter, path, env);
+        
+        // Parse CGI output (separate headers from body)
+        size_t headerEnd = output.find("\r\n\r\n");
+        if (headerEnd == std::string::npos) {
+            headerEnd = output.find("\n\n");
+        }
+        
+        if (headerEnd != std::string::npos) {
+            // Process CGI headers
+            std::string headers = output.substr(0, headerEnd);
+            std::istringstream headerStream(headers);
+            std::string line;
+            
+            while (std::getline(headerStream, line) && !line.empty()) {
+                size_t colonPos = line.find(':');
+                if (colonPos != std::string::npos) {
+                    std::string key = line.substr(0, colonPos);
+                    std::string value = line.substr(colonPos + 1);
+                    // Trim whitespace
+                    value.erase(0, value.find_first_not_of(" \t"));
+                    this->headers[key] = value;
+                }
+            }
+            
+            body = output.substr(headerEnd + 4); // Skip \r\n\r\n
+        } else {
+            // No headers found, treat everything as body
+            body = output;
+            headers["Content-Type"] = "text/html";
+        }
+        
+        statusCode = 200;
+        statusMessage = "OK";
+    } catch (const std::exception& e) {
+        std::cerr << "CGI Error: " << e.what() << std::endl;
+        serveErrorPage(500);
+    }
 }
 
 void Response::setStatus(int code, const std::string& message) {

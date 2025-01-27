@@ -28,6 +28,7 @@ private:
    LocationConfig* matchedLocation;
 
    int deleteStatus; // per lo stato del DELETE, se è andato a buon fine o meno
+   int postStatus;
 
    void parseStartLine(const std::string& line);
    void parseHeader(const std::string& line);
@@ -50,7 +51,8 @@ public:
    const std::string& getResolvedPath() const;
    LocationConfig* getMatchedLocation() const;
    bool isMethodAllowed() const;
-   void handlePost();
+   void handlePost(const std::string& data);
    void handleDelete();
    int getDeleteStatus() const { return deleteStatus; }
+   int getPostStatus() const { return postStatus; }
 };

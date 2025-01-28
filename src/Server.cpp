@@ -71,11 +71,9 @@ void Request::setMatchedServer(ServerConfig* server) {
 }
 
 void Server::handleRequest(int clientFd) {
-    // Prendiamo il client_max_body_size dal config
     size_t maxBodySize = configs.front().getClientMaxBodySize();
-    // Allochiamo un buffer della dimensione appropriata
-    char* buffer = new char[maxBodySize + 1];  // +1 per il terminatore null
-    std::string requestData;
+    char* buffer = new char[maxBodySize + 1];
+    Request* request = requests[clientFd];
     
     try {
         while (true) {
@@ -88,46 +86,52 @@ void Server::handleRequest(int clientFd) {
                 removeClient(clientFd);
                 return;
             }
-            
-            // Verifica che non stiamo superando il limite massimo
-            if (requestData.length() + bytes > maxBodySize) {
-                delete[] buffer;
-                // Rispondi con un errore 413 (Payload Too Large)
-                Request* request = requests[clientFd];
-                request->setMatchedServer(&configs.front());
-                responses[clientFd] = new Response(request);
-                responses[clientFd]->setStatus(413, "Payload Too Large");
-                responses[clientFd]->setBody("Request entity too large");
-                
-                epoll_event ev;
-                ev.events = EPOLLOUT | EPOLLET;
-                ev.data.fd = clientFd;
-                epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
-                return;
-            }
-            
+
             buffer[bytes] = '\0';
-            requestData += std::string(buffer, bytes);
-            
-            Request* request = requests[clientFd];
-            request->setMatchedServer(&configs.front());
-            
-            if (request->parse(requestData)) {
-                request->matchLocation(configs.front().getLocations());
-                responses[clientFd] = new Response(request);
-                
-                epoll_event ev;
-                ev.events = EPOLLOUT | EPOLLET;
-                ev.data.fd = clientFd;
-                epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
-                break;
+            std::cout << "Read " << bytes << " bytes" << std::endl;
+
+            // Aggiungi i nuovi dati alla richiesta
+            if (!request->parse(std::string(buffer, bytes))) {
+                // Se il parsing non è completo, continua a leggere
+                continue;
             }
+
+            // Se siamo qui, il parsing degli headers è completo
+            if (request->getMethod() == "POST") {
+                size_t expectedLength = request->getContentLength();
+                if (expectedLength > maxBodySize) {
+                    std::cout << "Request too large: " << expectedLength << " > " << maxBodySize << std::endl;
+                    request->setMatchedServer(&configs.front());
+                    responses[clientFd] = new Response(request);
+                    responses[clientFd]->setStatus(413, "Payload Too Large");
+                    break;
+                }
+                
+                std::cout << "Expected content length: " << expectedLength << std::endl;
+                std::cout << "Current body size: " << request->getBody().length() << std::endl;
+                
+                if (request->getBody().length() < expectedLength) {
+                    // Continua a leggere se non abbiamo tutto il body
+                    continue;
+                }
+            }
+
+            // Se arriviamo qui, abbiamo una richiesta completa
+            request->setMatchedServer(&configs.front());
+            request->matchLocation(configs.front().getLocations());
+            responses[clientFd] = new Response(request);
+
+            epoll_event ev;
+            ev.events = EPOLLOUT | EPOLLET;
+            ev.data.fd = clientFd;
+            epoll_ctl(epollFd, EPOLL_CTL_MOD, clientFd, &ev);
+            break;
         }
     } catch (const std::exception& e) {
         std::cerr << "Error handling request: " << e.what() << std::endl;
     }
     
-    delete[] buffer;  // Libera la memoria del buffer
+    delete[] buffer;
 }
 // fino a qui aggiunto e modificato con questo ultimo push 18:12
 

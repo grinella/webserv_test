@@ -5,13 +5,14 @@
 
 class Request{
 private:
-   enum State {
-       READ_METHOD,
-       READ_HEADERS,
-       READ_BODY,
-       COMPLETE,
-       ERROR
-   };
+   std::string requestBuffer;  // Buffer per i dati in arrivo
+    enum State {
+        READ_METHOD,
+        READ_HEADERS,
+        READ_BODY,
+        COMPLETE,
+        ERROR
+    };
 
    Request* request;
    State state;
@@ -29,6 +30,10 @@ private:
 
    int deleteStatus; // per lo stato del DELETE, se è andato a buon fine o meno
    int postStatus;
+
+   size_t headerLength;
+   bool headerComplete;
+   // size_t contentLength;
 
    void parseStartLine(const std::string& line);
    void parseHeader(const std::string& line);
@@ -51,8 +56,11 @@ public:
    const std::string& getResolvedPath() const;
    LocationConfig* getMatchedLocation() const;
    bool isMethodAllowed() const;
-   void handlePost(const std::string& data);
+   void handlePost();
    void handleDelete();
    int getDeleteStatus() const { return deleteStatus; }
    int getPostStatus() const { return postStatus; }
+   bool isHeaderComplete() const { return headerComplete; }
+   size_t getHeaderLength() const { return headerLength; }
+   size_t getContentLength() const { return contentLength; }
 };

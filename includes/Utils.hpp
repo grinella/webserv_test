@@ -12,4 +12,5 @@ namespace Utils {
     bool isValidSize(const std::string& size);
     size_t parseSize(const std::string& size);
     std::string getDirectiveValue(const std::string& line, const std::string& directive);
+    std::string U_intToString(int value);
 }

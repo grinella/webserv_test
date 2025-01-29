@@ -9,6 +9,13 @@
 
 class Response {
 private:
+   struct EntryCompare {
+      bool operator()(const std::pair<std::string, struct stat>& a,
+                     const std::pair<std::string, struct stat>& b) const {
+           return a.first < b.first;
+      }
+   };
+
    Request* request;  // Add this first
    int statusCode;
    std::string statusMessage;

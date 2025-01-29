@@ -17,7 +17,7 @@ Request::Request()
     , headerLength(0)
     , headerComplete(false) {}
 
-std::string urlDecode(const std::string &encoded) {
+std::string urlDecode_Request(const std::string &encoded) {
     std::ostringstream decoded;
     for (size_t i = 0; i < encoded.length(); ++i) {
         if (encoded[i] == '%' && i + 2 < encoded.length()) {
@@ -75,6 +75,12 @@ bool Request::parse(const std::string& data) {
             }
             requestBuffer.clear(); // Pulisci il buffer dopo aver processato gli headers
             
+            if (method == "DELETE") {
+                std::cout << "Processing DELETE request" << std::endl;
+                handleDelete();
+                return true;
+            }
+            
             if (method != "POST") {
                 return true;
             }
@@ -98,8 +104,10 @@ void Request::handleDelete() {
     struct stat pathStat;
     deleteStatus = 200; // Default a success
 
+    std::cout << "passo da qui" << std::endl;
+
     // Decodifica l'URI e costruisci il percorso
-    std::string decodedUri = urlDecode(uri);
+    std::string decodedUri = urlDecode_Request(uri);
     std::string fullPath = "www" + decodedUri;
     std::cout << "Attempting to delete file: " << fullPath << std::endl;
 
@@ -266,29 +274,98 @@ void Request::matchLocation(const std::vector<LocationConfig>& locations) {
     if (normalizedUri.length() > 1 && normalizedUri[normalizedUri.length()-1] == '/') {
         normalizedUri = normalizedUri.substr(0, normalizedUri.length()-1);
     }
+
+    // Debug output
+    std::cout << "Original URI: " << uri << std::endl;
+    std::cout << "Normalized URI: " << normalizedUri << std::endl;
+    
     size_t i = 0;
-    while ( i < locations.size()) {
+    while (i < locations.size()) {
         const LocationConfig& loc = locations[i];
         std::string locPath = loc.getPath();
+        
+        std::cout << "Checking location: " << locPath << std::endl;
         
         if (normalizedUri.substr(0, locPath.length()) == locPath && locPath.length() > longestMatch) {
             longestMatch = locPath.length();
             matchedLocation = const_cast<LocationConfig*>(&loc);
             
+            std::cout << "Matched location: " << locPath << std::endl;
+            if (matchedLocation->getRoot().length() > 0) {
+                std::cout << "Location root: " << matchedLocation->getRoot() << std::endl;
+            }
+            
             if (normalizedUri == "/") {
                 resolvedPath = "www/index.html";
+                std::cout << "Root path, using index: " << resolvedPath << std::endl;
             } else if (!matchedLocation->getRoot().empty()) {
-                resolvedPath = matchedLocation->getRoot();
-                if (normalizedUri != locPath) {
-                    resolvedPath += normalizedUri.substr(locPath.length() + 1);
+                // Gestisci il root path
+                std::string root = matchedLocation->getRoot();
+                
+                // Rimuovi eventuali slash iniziali e finali dal root
+                if (!root.empty() && root[0] == '/') {
+                    root = root.substr(1);
                 }
+                if (!root.empty() && root[root.length()-1] == '/') {
+                    root = root.substr(0, root.length()-1);
+                }
+                
+                // Rimuovi "www" se presente all'inizio del root
+                if (root.substr(0, 3) == "www") {
+                    root = root.substr(3);
+                }
+                if (!root.empty() && root[0] == '/') {
+                    root = root.substr(1);
+                }
+                
+                // Costruisci il path relativo dopo la location
+                std::string relativePath;
+                if (normalizedUri.length() > locPath.length()) {
+                    relativePath = normalizedUri.substr(locPath.length());
+                    if (!relativePath.empty() && relativePath[0] == '/') {
+                        relativePath = relativePath.substr(1);
+                    }
+                }
+                
+                // Costruisci il path finale
+                resolvedPath = "www/";
+                if (!root.empty()) {
+                    resolvedPath += root + "/";
+                }
+                if (!relativePath.empty()) {
+                    resolvedPath += relativePath;
+                }
+                
+                // Rimuovi eventuali doppi slash
+                size_t pos;
+                while ((pos = resolvedPath.find("//")) != std::string::npos) {
+                    resolvedPath.replace(pos, 2, "/");
+                }
+                
+                std::cout << "Using root path: " << root << std::endl;
+                std::cout << "Relative path: " << relativePath << std::endl;
+                std::cout << "Final resolved path: " << resolvedPath << std::endl;
             } else {
                 resolvedPath = "www" + normalizedUri;
+                std::cout << "Default path resolution: " << resolvedPath << std::endl;
             }
         }
         ++i;
     }
-    std::cout << "URI: " << uri << "\nResolved path: " << resolvedPath << std::endl;
+    
+    // Debug output finale
+    std::cout << "Final resolution:" << std::endl;
+    std::cout << "URI: " << uri << std::endl;
+    std::cout << "Resolved path: " << resolvedPath << std::endl;
+    
+    if (matchedLocation) {
+        std::cout << "Matched location settings:" << std::endl;
+        std::cout << "- Path: " << matchedLocation->getPath() << std::endl;
+        std::cout << "- Root: " << matchedLocation->getRoot() << std::endl;
+        std::cout << "- Autoindex: " << (matchedLocation->getAutoindex() ? "on" : "off") << std::endl;
+    } else {
+        std::cout << "No location matched!" << std::endl;
+    }
 }
 
 bool Request::isMethodAllowed() const {
@@ -308,5 +385,3 @@ const std::string& Request::getMethod() const{
 const std::string& Request::getBody() const{
     return this->body;
 }
-
-// andra' aggiunto handlePost()

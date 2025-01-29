@@ -3,10 +3,12 @@
 #include <unistd.h>
 #include <fstream>
 #include <iostream>
+#include <dirent.h>
 #include <cstdlib>     // Per exit
 #include <cstring>     // Per strdup
 #include <sys/types.h> // Per pid_t
 #include <sys/wait.h>  // Per waitpid
+#include <algorithm>
 
 std::map<std::string, std::string> Response::mimeTypes;
 
@@ -20,6 +22,26 @@ void Response::initMimeTypes() {
     mimeTypes.insert(std::make_pair(".php", "application/x-httpd-php"));
     mimeTypes.insert(std::make_pair(".py", "text/x-python"));
     mimeTypes.insert(std::make_pair(".sh", "application/x-sh"));
+}
+
+std::string urlDecode(const std::string &encoded) {
+    std::ostringstream decoded;
+    for (size_t i = 0; i < encoded.length(); ++i) {
+        if (encoded[i] == '%' && i + 2 < encoded.length()) {
+            // Converte il valore in esadecimale in un carattere ASCII
+            std::istringstream hex(encoded.substr(i + 1, 2));
+            int charCode;
+            hex >> std::hex >> charCode;
+            decoded << static_cast<char>(charCode);
+            i += 2;
+        } else if (encoded[i] == '+') {
+            // '+' è codificato come spazio
+            decoded << ' ';
+        } else {
+            decoded << encoded[i];
+        }
+    }
+    return decoded.str();
 }
 
 Response::Response(Request* req) : statusCode(200), statusMessage("OK"), bytesSent(0) {
@@ -100,37 +122,59 @@ bool Response::send(int fd) {
 }
 
 void Response::setContentType(const std::string& path) {
-   size_t dot = path.find_last_of(".");
+   std::string decodedPath = urlDecode(path);
+   size_t dot = decodedPath.find_last_of(".");
    if (dot != std::string::npos) {
-       std::string ext = path.substr(dot);
+       std::string ext = decodedPath.substr(dot);
+       if (ext == ".pdf") {
+           headers["Content-Type"] = "application/pdf";
+           return;
+       }
        std::map<std::string, std::string>::const_iterator it = mimeTypes.find(ext);
        if (it != mimeTypes.end()) {
            headers["Content-Type"] = it->second;
            return;
        }
    }
-   headers["Content-Type"] = "text/plain";
+   headers["Content-Type"] = "application/octet-stream";
 }
 
 bool Response::serveStaticFile(const std::string& path) {
+    // Decodifica il path e verifica se è una directory
+    std::string decodedPath = urlDecode(path);
     struct stat st;
-    if (stat(path.c_str(), &st) == 0) {
+    
+    if (stat(decodedPath.c_str(), &st) == 0) {
         if (S_ISDIR(st.st_mode)) {
             if (request->getMatchedLocation()->getAutoindex()) {
-                generateDirectoryListing(path);
+                generateDirectoryListing(decodedPath);
                 return true;
             }
             return false;
         }
     }
 
-    std::ifstream file(path.c_str(), std::ios::binary);
-    if (!file) return false;
+    // Apri e leggi il file in modalità binaria
+    std::ifstream file(decodedPath.c_str(), std::ios::binary);
+    if (!file) {
+        return false;
+    }
 
-    setContentType(path);
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    body = buffer.str();
+    // Imposta il content type basato sul path decodificato
+    setContentType(decodedPath);
+
+    // Leggi il file in un buffer binario
+    file.seekg(0, std::ios::end);
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> buffer(size);
+    if (file.read(&buffer[0], size)) {
+        body = std::string(buffer.begin(), buffer.end());
+    } else {
+        return false;
+    }
+
     return true;
 }
 
@@ -174,16 +218,92 @@ void Response::generateDirectoryListing(const std::string& path) {
     }
 
     std::stringstream content;
-    content << "<html><head><title>Index of " << path << "</title></head><body>\n";
-    content << "<h1>Index of " << path << "</h1><hr><pre>\n";
+    // Estrai il path relativo dalla cartella www
+    std::string relativePath = path;
+    if (relativePath.substr(0, 4) == "www/") {
+        relativePath = relativePath.substr(4);
+    }
+    if (!relativePath.empty() && relativePath[relativePath.length()-1] != '/') {
+        relativePath += '/';
+    }
+
+    // Crea l'header della pagina con stili CSS inline
+    content << "<html><head><title>Index of /" << relativePath << "</title>\n";
+    content << "<style>\n";
+    content << "body { font-family: Arial, sans-serif; margin: 40px; }\n";
+    content << "h1 { color: #333; margin-bottom: 20px; }\n";
+    content << ".directory-list { width: 100%; border-collapse: collapse; }\n";
+    content << ".directory-list th, .directory-list td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }\n";
+    content << ".directory-list tr:hover { background-color: #f5f5f5; }\n";
+    content << "a { color: #0366d6; text-decoration: none; }\n";
+    content << "a:hover { text-decoration: underline; }\n";
+    content << ".size { color: #666; }\n";
+    content << ".date { color: #666; }\n";
+    content << "</style></head>";
+    content << "<body>\n";
+    content << "<h1>Index of /" << relativePath << "</h1>\n";
+    content << "<table class=\"directory-list\">\n";
+    content << "<tr><th>Name</th><th>Size</th><th>Last Modified</th></tr>\n";
 
     struct dirent* entry;
+    struct stat fileStat;
+    std::string fullPath;
+    
+    // Raccogli tutte le entries in un vector per poterle ordinare
+    std::vector<std::pair<std::string, struct stat> > entries;
+    
     while ((entry = readdir(dir))) {
-        if (std::string(entry->d_name) != "." && std::string(entry->d_name) != "..") {
-            content << "<a href=\"" << entry->d_name << "\">" << entry->d_name << "</a>\n";
+        std::string name = entry->d_name;
+        if (name != "." && name != "..") {
+            fullPath = path + "/" + name;
+            if (stat(fullPath.c_str(), &fileStat) == 0) {
+                entries.push_back(std::make_pair(name, fileStat));
+            }
         }
     }
-    content << "</pre><hr></body></html>";
+
+    // Ordina le entries per nome
+    std::sort(entries.begin(), entries.end(), EntryCompare());
+
+    // Aggiungi un link per tornare alla directory superiore se non siamo nella root
+    if (relativePath != "") {
+        content << "<tr><td><a href=\"/";
+        size_t lastSlash = relativePath.substr(0, relativePath.length()-1).find_last_of('/');
+        if (lastSlash != std::string::npos) {
+            content << relativePath.substr(0, lastSlash + 1);
+        }
+        content << "\">..</a></td><td>-</td><td>-</td></tr>\n";
+    }
+
+    // Genera le righe della tabella per ogni entry
+    for (std::vector<std::pair<std::string, struct stat> >::const_iterator it = entries.begin();
+         it != entries.end(); ++it) {
+        const std::string& name = it->first;
+        const struct stat& st = it->second;
+
+        content << "<tr><td><a href=\"/" << relativePath << name << "\">" 
+                << name << "</a></td>";
+
+        // Dimensione del file
+        if (S_ISDIR(st.st_mode)) {
+            content << "<td>-</td>";
+        } else {
+            if (st.st_size < 1024) {
+                content << "<td class=\"size\">" << st.st_size << " B</td>";
+            } else if (st.st_size < 1024 * 1024) {
+                content << "<td class=\"size\">" << st.st_size / 1024 << " KB</td>";
+            } else {
+                content << "<td class=\"size\">" << st.st_size / (1024 * 1024) << " MB</td>";
+            }
+        }
+
+        // Data di ultima modifica
+        char timeStr[80];
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", localtime(&st.st_mtime));
+        content << "<td class=\"date\">" << timeStr << "</td></tr>\n";
+    }
+
+    content << "</table></body></html>";
     closedir(dir);
 
     body = content.str();

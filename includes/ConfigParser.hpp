@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iostream> // Aggiunto per std::cout
 #include <stdexcept>
+#include <unistd.h> // per access()
 #include "ServerConfig.hpp"
 #include "LocationConfig.hpp"
 
@@ -17,7 +18,7 @@ private:
     
     // Core parsing methods
     void parseFile();
-    void parseServer(const std::string& serverBlock);
+    ServerConfig parseServer(const std::string& serverBlock);
     void parseLocation(const std::string& locationBlock, LocationConfig& location);
     
     // Helper methods for parsing specific directives
@@ -49,3 +50,12 @@ public:
     const std::vector<ServerConfig>& getServers() const;
     void debugPrint() const;  // Aggiunto il metodo debugPrint
 };
+
+// Definizioni delle costanti di access se non esistono
+#ifndef F_OK
+#define F_OK 0
+#endif
+
+#ifndef X_OK
+#define X_OK 1
+#endif

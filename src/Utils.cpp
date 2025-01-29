@@ -90,4 +90,10 @@ namespace Utils {
     }
     return trim(value);
     }
+
+    std::string U_intToString(int value) {
+        std::ostringstream ss;
+        ss << value;
+        return ss.str();
+    }
 }

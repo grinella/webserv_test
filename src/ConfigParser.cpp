@@ -13,6 +13,48 @@ const std::vector<ServerConfig>& ConfigParser::getServers() const {
     return servers;
 }
 
+bool ConfigParser::validateLocation(const LocationConfig& location) {
+    static std::map<std::string, bool> seenDirectives;
+    seenDirectives.clear();
+
+    // Check for empty path
+    if (location.getPath().empty()) {
+        return false;
+    }
+
+    // Check for duplicate methods
+    const std::vector<std::string>& methods = location.getAllowedMethods();
+    std::map<std::string, bool> seenMethods;
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (seenMethods[methods[i]]) {
+            throw std::runtime_error("Duplicate method in allow_methods: " + methods[i]);
+        }
+        seenMethods[methods[i]] = true;
+
+        // Verify method is valid
+        if (methods[i] != "GET" && methods[i] != "POST" && methods[i] != "DELETE") {
+            throw std::runtime_error("Invalid HTTP method: " + methods[i]);
+        }
+    }
+
+    // Check if CGI paths exist for CGI extensions
+    const std::vector<std::string>& cgiExt = location.getCgiExtensions();
+    const std::vector<std::string>& cgiPath = location.getCgiPaths();
+    if (!cgiExt.empty()) {
+        if (cgiPath.empty()) {
+            throw std::runtime_error("CGI extensions defined but no CGI paths provided");
+        }
+        // Verify CGI paths exist
+        for (size_t i = 0; i < cgiPath.size(); ++i) {
+            if (access(cgiPath[i].c_str(), X_OK) == -1) {
+                throw std::runtime_error("CGI interpreter not found or not executable: " + cgiPath[i]);
+            }
+        }
+    }
+
+    return true;
+}
+
 void ConfigParser::parseFile() {
     std::ifstream file(configFile.c_str());
     if (!file.is_open())
@@ -31,24 +73,48 @@ void ConfigParser::parseFile() {
     
     if (!validateSyntax(content))
         throw std::runtime_error("Invalid config file syntax");
+
+    std::map<std::string, int> serverPortCount;    // Per tenere traccia delle porte per host
+    std::map<std::string, bool> locationPaths;     // Per tenere traccia delle location già definite
     
     // Split into server blocks
     size_t pos = 0;
-    while ((pos = content.find("server {", pos)) != std::string::npos) {
-        size_t end = Utils::findMatchingBrace(content, pos + 7);
+    while ((pos = content.find_first_not_of(" \t\n\r", pos)) != std::string::npos) {
+        // Verifica che il blocco inizi con "server"
+        if (content.substr(pos, 6) != "server")
+            throw std::runtime_error("Invalid configuration: found non-server block");
+            
+        pos = content.find("{", pos);
+        if (pos == std::string::npos)
+            throw std::runtime_error("Invalid server block: missing opening brace");
+            
+        size_t end = Utils::findMatchingBrace(content, pos);
         if (end == std::string::npos)
             throw std::runtime_error("Unclosed server block");
             
-        std::string serverBlock = content.substr(pos + 8, end - (pos + 8));
-        parseServer(serverBlock);
+        std::string serverBlock = content.substr(pos + 1, end - (pos + 1));
+        ServerConfig server = parseServer(serverBlock);
+        
+        // Verifica duplicati host:port
+        std::string hostPort = server.getHost() + ":" + Utils::U_intToString(server.getPort());
+        if (serverPortCount[hostPort]++ > 0)
+            throw std::runtime_error("Duplicate host:port combination: " + hostPort);
+            
+        if (!validateServer(server))
+            throw std::runtime_error("Invalid server configuration");
+            
+        servers.push_back(server);
         pos = end + 1;
+        
+        // Reset locationPaths per il prossimo server
+        locationPaths.clear();
     }
     
     if (servers.empty())
         throw std::runtime_error("No valid server configurations found");
 }
 
-void ConfigParser::parseServer(const std::string& serverBlock) {
+ServerConfig ConfigParser::parseServer(const std::string& serverBlock) {
     ServerConfig server;
     std::istringstream iss(serverBlock);
     std::string line;
@@ -88,10 +154,7 @@ void ConfigParser::parseServer(const std::string& serverBlock) {
         }
     }
     
-    if (!validateServer(server))
-        throw std::runtime_error("Invalid server configuration");
-        
-    servers.push_back(server);
+    return server;
 }
 
 void ConfigParser::parseServerDirective(const std::string& line, ServerConfig& server) {
@@ -186,24 +249,50 @@ bool ConfigParser::validateSyntax(const std::string& content) {
 }
 
 bool ConfigParser::validateServer(const ServerConfig& server) {
-    return server.getPort() > 0 && !server.getHost().empty();
-}
+    static std::map<std::string, bool> seenDirectives;
+    seenDirectives.clear();
 
-bool ConfigParser::validateLocation(const LocationConfig& location) {
-    if (location.getPath().empty()) {
+    // Check required directives
+    if (server.getHost().empty() || server.getPort() <= 0) {
         return false;
     }
-    
-    // Validazione specifica per /cgi-bin
-    if (location.getPath() == "/cgi-bin") {
-        return !location.getCgiExtensions().empty() && !location.getCgiPaths().empty();
+
+    // Check host format
+    std::string host = server.getHost();
+    if (host[host.length() - 1] == '.' || !Utils::isValidIPAddress(host)) {
+        throw std::runtime_error("Invalid host format: " + host);
     }
-    
-    // Validazione per altre locations
-    if (location.getAllowedMethods().empty()) {
-        return false;
+
+    // Check error pages exist
+    const std::map<int, std::string>& errorPages = server.getErrorPages();
+    for (std::map<int, std::string>::const_iterator it = errorPages.begin(); 
+         it != errorPages.end(); ++it) {
+        std::string path = it->second;
+        if (path[0] == '/') {
+            path = "." + path;
+        }
+        if (access(path.c_str(), F_OK) == -1) {
+            throw std::runtime_error("Error page not found: " + it->second);
+        }
     }
-    
+
+    // Check locations
+    std::map<std::string, bool> locationPaths;
+    const std::vector<LocationConfig>& locations = server.getLocations();
+    for (size_t i = 0; i < locations.size(); ++i) {
+        const LocationConfig& loc = locations[i];
+        std::string path = loc.getPath();
+        
+        if (locationPaths[path]) {
+            throw std::runtime_error("Duplicate location path: " + path);
+        }
+        locationPaths[path] = true;
+
+        if (!validateLocation(loc)) {
+            throw std::runtime_error("Invalid location configuration for path: " + path);
+        }
+    }
+
     return true;
 }
 

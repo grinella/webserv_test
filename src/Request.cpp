@@ -267,94 +267,100 @@ void Request::parseHeader(const std::string& line) {
 }
 
 void Request::matchLocation(const std::vector<LocationConfig>& locations) {
-    size_t longestMatch = 0;
-    
-    // Normalizza URI rimuovendo trailing slash
+    matchedLocation = NULL;
     std::string normalizedUri = uri;
     if (normalizedUri.length() > 1 && normalizedUri[normalizedUri.length()-1] == '/') {
         normalizedUri = normalizedUri.substr(0, normalizedUri.length()-1);
     }
 
-    // Debug output
     std::cout << "Original URI: " << uri << std::endl;
     std::cout << "Normalized URI: " << normalizedUri << std::endl;
-    
-    size_t i = 0;
-    while (i < locations.size()) {
-        const LocationConfig& loc = locations[i];
-        std::string locPath = loc.getPath();
-        
-        std::cout << "Checking location: " << locPath << std::endl;
-        
-        if (normalizedUri.substr(0, locPath.length()) == locPath && locPath.length() > longestMatch) {
-            longestMatch = locPath.length();
-            matchedLocation = const_cast<LocationConfig*>(&loc);
-            
-            std::cout << "Matched location: " << locPath << std::endl;
-            if (matchedLocation->getRoot().length() > 0) {
-                std::cout << "Location root: " << matchedLocation->getRoot() << std::endl;
-            }
-            
-            if (normalizedUri == "/") {
-                resolvedPath = "www/index.html";
-                std::cout << "Root path, using index: " << resolvedPath << std::endl;
-            } else if (!matchedLocation->getRoot().empty()) {
-                // Gestisci il root path
-                std::string root = matchedLocation->getRoot();
-                
-                // Rimuovi eventuali slash iniziali e finali dal root
-                if (!root.empty() && root[0] == '/') {
-                    root = root.substr(1);
-                }
-                if (!root.empty() && root[root.length()-1] == '/') {
-                    root = root.substr(0, root.length()-1);
-                }
-                
-                // Rimuovi "www" se presente all'inizio del root
-                if (root.substr(0, 3) == "www") {
-                    root = root.substr(3);
-                }
-                if (!root.empty() && root[0] == '/') {
-                    root = root.substr(1);
-                }
-                
-                // Costruisci il path relativo dopo la location
-                std::string relativePath;
-                if (normalizedUri.length() > locPath.length()) {
-                    relativePath = normalizedUri.substr(locPath.length());
-                    if (!relativePath.empty() && relativePath[0] == '/') {
-                        relativePath = relativePath.substr(1);
-                    }
-                }
-                
-                // Costruisci il path finale
-                resolvedPath = "www/";
-                if (!root.empty()) {
-                    resolvedPath += root + "/";
-                }
-                if (!relativePath.empty()) {
-                    resolvedPath += relativePath;
-                }
-                
-                // Rimuovi eventuali doppi slash
-                size_t pos;
-                while ((pos = resolvedPath.find("//")) != std::string::npos) {
-                    resolvedPath.replace(pos, 2, "/");
-                }
-                
-                std::cout << "Using root path: " << root << std::endl;
-                std::cout << "Relative path: " << relativePath << std::endl;
-                std::cout << "Final resolved path: " << resolvedPath << std::endl;
-            } else {
-                resolvedPath = "www" + normalizedUri;
-                std::cout << "Default path resolution: " << resolvedPath << std::endl;
-            }
+    std::cout << "\nAvailable Locations:" << std::endl;
+    for (size_t i = 0; i < locations.size(); ++i) {
+        std::cout << "Location [" << i << "]: " << locations[i].getPath();
+        if (locations[i].hasRedirect()) {
+            std::cout << " (has redirect to: " << locations[i].getRedirect() 
+                     << ", code: " << locations[i].getRedirectCode() << ")";
         }
-        ++i;
+        std::cout << std::endl;
     }
+    std::cout << std::endl;
+
+    // Ordina le location dalla più specifica alla più generica
+    std::vector<const LocationConfig*> sortedLocations;
+    for (size_t i = 0; i < locations.size(); ++i) {
+        sortedLocations.push_back(&locations[i]);
+    }
+    std::sort(sortedLocations.begin(), sortedLocations.end(), LocationCompare());
     
-    // Debug output finale
-    std::cout << "Final resolution:" << std::endl;
+
+    std::cout << "Sorted Locations:" << std::endl;
+    for (size_t i = 0; i < sortedLocations.size(); ++i) {
+        std::cout << sortedLocations[i]->getPath() << std::endl;
+    }
+    std::cout << std::endl;
+
+    // Prima cerca match esatti
+    for (size_t i = 0; i < sortedLocations.size(); ++i) {
+        const LocationConfig* loc = sortedLocations[i];
+        std::cout << "Checking exact match for location: " << loc->getPath();
+        if (normalizedUri == loc->getPath()) {
+            matchedLocation = const_cast<LocationConfig*>(loc);
+            std::cout << " - MATCH FOUND" << std::endl;
+            break;
+        }
+        std::cout << " - no match" << std::endl;
+    }
+
+    // Se non trova match esatti, cerca il match più lungo possibile
+    if (!matchedLocation) {
+        for (size_t i = 0; i < sortedLocations.size(); ++i) {
+            const LocationConfig* loc = sortedLocations[i];
+            std::cout << "Checking prefix match for location: " << loc->getPath();
+
+            if (normalizedUri.find(loc->getPath()) == 0) {
+                // Assicurati che sia un match valido
+                if (loc->getPath() == "/" || 
+                    normalizedUri.length() == loc->getPath().length() || 
+                    normalizedUri[loc->getPath().length()] == '/') {
+                    matchedLocation = const_cast<LocationConfig*>(loc);
+                    std::cout << " - MATCH FOUND" << std::endl;
+                    break;
+                }
+            }
+            std::cout << " - no match" << std::endl;
+        }
+    }
+
+    if (matchedLocation) {
+        std::cout << "Final matched location: " << matchedLocation->getPath() << std::endl;
+        
+        // Se la location ha una redirezione, non serve risolvere il path
+        if (matchedLocation->hasRedirect()) {
+            std::cout << "Location has redirect - Target: " << matchedLocation->getRedirect() 
+                     << ", Code: " << matchedLocation->getRedirectCode() << std::endl;
+            resolvedPath = "";
+            return;
+        }
+
+        // Risolvi il path se non c'è redirezione
+        if (normalizedUri == "/") {
+            resolvedPath = "www/index.html";
+            std::cout << "Root path, using index: " << resolvedPath << std::endl;
+        } else if (!matchedLocation->getRoot().empty()) {
+            std::string root = matchedLocation->getRoot();
+            if (root.substr(0, 4) == "/www") {
+                root = root.substr(4);
+            }
+            resolvedPath = "www" + root + normalizedUri.substr(matchedLocation->getPath().length());
+        } else {
+            resolvedPath = "www" + normalizedUri;
+        }
+    } else {
+        resolvedPath = "www" + normalizedUri;
+    }
+
+    std::cout << "\nFinal resolution:" << std::endl;
     std::cout << "URI: " << uri << std::endl;
     std::cout << "Resolved path: " << resolvedPath << std::endl;
     
@@ -363,8 +369,10 @@ void Request::matchLocation(const std::vector<LocationConfig>& locations) {
         std::cout << "- Path: " << matchedLocation->getPath() << std::endl;
         std::cout << "- Root: " << matchedLocation->getRoot() << std::endl;
         std::cout << "- Autoindex: " << (matchedLocation->getAutoindex() ? "on" : "off") << std::endl;
-    } else {
-        std::cout << "No location matched!" << std::endl;
+        if (matchedLocation->hasRedirect()) {
+            std::cout << "- Redirect: " << matchedLocation->getRedirect() << std::endl;
+            std::cout << "- Redirect code: " << matchedLocation->getRedirectCode() << std::endl;
+        }
     }
 }
 

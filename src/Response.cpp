@@ -51,6 +51,10 @@ void Response::handleRedirect() {
         return;
     }
 
+    std::cout << "Processing redirect - From: " << request->getUri() 
+              << " To: " << loc->getRedirect() 
+              << " (Code: " << loc->getRedirectCode() << ")" << std::endl;
+
     std::cout << "Checking redirect for location: " << loc->getPath() << std::endl;
     if (!loc->hasRedirect()) {
         std::cout << "No redirect found for this location" << std::endl;

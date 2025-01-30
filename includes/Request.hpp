@@ -13,6 +13,20 @@ private:
         COMPLETE,
         ERROR
     };
+   
+   struct LocationLengthCompare {
+      bool operator()(const LocationConfig* a, const LocationConfig* b) {
+         return a->getPath().length() > b->getPath().length();
+      }
+   };
+
+   struct LocationCompare {
+       bool operator()(const LocationConfig* a, const LocationConfig* b) const {
+           if (a->getPath() == "/") return false;
+           if (b->getPath() == "/") return true;
+           return a->getPath().length() > b->getPath().length();
+       }
+   };
 
    Request* request;
    State state;

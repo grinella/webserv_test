@@ -166,6 +166,16 @@ ServerConfig ConfigParser::parseServer(const std::string& serverBlock) {
         } else if (line != currentLine) {
             parseServerDirective(line, server);
         }
+        std::cout << "\nParsed Server Configuration:" << std::endl;
+        for (size_t i = 0; i < server.getLocations().size(); ++i) {
+            const LocationConfig& loc = server.getLocations()[i];
+            std::cout << "Location: " << loc.getPath() << std::endl;
+            if (loc.hasRedirect()) {
+                std::cout << "  - Redirect to: " << loc.getRedirect() 
+                        << " (code: " << loc.getRedirectCode() << ")" << std::endl;
+            }
+        }
+        std::cout << std::endl;
     }
 
     // Verifica che le direttive obbligatorie siano presenti

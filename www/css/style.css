@@ -1,8 +1,8 @@
 /* www/css/style.css */
 body {
     font-family: Arial, sans-serif;
-    /* background-image: url('../img/shrek.jpeg'); */
-    background-color: #180c18;
+    background-image: url('../img/shrek.jpeg');
+    /* background-color: #180c18; */
     background-size: cover;          /* L'immagine copre l'intera area del body */
     background-repeat: no-repeat;    /* Evita la ripetizione dell'immagine */
     background-position: center;     /* Centra l'immagine nella pagina */

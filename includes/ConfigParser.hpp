@@ -58,5 +58,4 @@ public:
     ~ConfigParser();
 
     const std::vector<ServerConfig>& getServers() const;
-    void debugPrint() const;
 };

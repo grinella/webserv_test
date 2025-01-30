@@ -15,7 +15,9 @@ Request::Request()
     , chunked(false)
     , matchedServer(NULL)
     , headerLength(0)
-    , headerComplete(false) {}
+    , headerComplete(false) {
+        startTime = time(NULL);
+    }
 
 std::string urlDecode_Request(const std::string &encoded) {
     std::ostringstream decoded;

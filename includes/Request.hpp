@@ -2,6 +2,7 @@
 #include <string>
 #include <map>
 #include "ServerConfig.hpp"
+#include <ctime>
 
 class Request{
 private:
@@ -77,4 +78,7 @@ public:
    bool isHeaderComplete() const { return headerComplete; }
    size_t getHeaderLength() const { return headerLength; }
    size_t getContentLength() const { return contentLength; }
+
+   // Timeout
+   time_t startTime;
 };

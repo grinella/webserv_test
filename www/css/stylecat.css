@@ -2,7 +2,7 @@
 body {
     font-family: Arial, sans-serif;
     /* background-image: url('../img/shrek.jpeg'); */
-    background-color: #180c18;
+    background-color: #000000;
     background-size: cover;          /* L'immagine copre l'intera area del body */
     background-repeat: no-repeat;    /* Evita la ripetizione dell'immagine */
     background-position: center;     /* Centra l'immagine nella pagina */
@@ -23,7 +23,7 @@ body {
 
 h1 {
     font-size: 2.5em;
-    color: #000000;                  /* Colore del testo impostato su nero */
+    color: #ffffff;                  /* Colore del testo impostato su nero */
     text-align: center;
 
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.65); /* Aggiunta dell'ombra solo intorno al testo */
@@ -35,7 +35,7 @@ h1 {
 
 
 p, label {
-    color: #010000;
+    color: #ffffff;
     font-size: 1.1em;
     text-align: center;
     text-shadow: 0 0 4px rgba(255, 255, 255, 0.65); /* Aggiunta dell'ombra solo intorno al testo */

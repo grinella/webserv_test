@@ -1,20 +1,28 @@
-#pragma once
-
 #include <string>
 #include <vector>
 #include <map>
 #include <fstream>
 #include <sstream>
-#include <iostream> // Aggiunto per std::cout
+#include <iostream>
 #include <stdexcept>
-#include <unistd.h> // per access()
+#include <unistd.h>
 #include "ServerConfig.hpp"
 #include "LocationConfig.hpp"
+
+// Definizioni delle costanti di access se non esistono
+#ifndef F_OK
+#define F_OK 0
+#endif
+
+#ifndef X_OK
+#define X_OK 1
+#endif
 
 class ConfigParser {
 private:
     std::string configFile;
     std::vector<ServerConfig> servers;
+    std::map<std::string, bool> seenDirectives;
     
     // Core parsing methods
     void parseFile();
@@ -48,14 +56,5 @@ public:
     ~ConfigParser();
     
     const std::vector<ServerConfig>& getServers() const;
-    void debugPrint() const;  // Aggiunto il metodo debugPrint
+    void debugPrint() const;
 };
-
-// Definizioni delle costanti di access se non esistono
-#ifndef F_OK
-#define F_OK 0
-#endif
-
-#ifndef X_OK
-#define X_OK 1
-#endif

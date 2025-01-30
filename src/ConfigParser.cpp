@@ -120,9 +120,16 @@ ServerConfig ConfigParser::parseServer(const std::string& serverBlock) {
     std::string line;
     std::string currentLine;
     
+    // Reset della mappa delle direttive
+    seenDirectives.clear();
+    
+    // Mappa per tenere traccia delle location già viste
+    std::map<std::string, bool> seenLocations;
+    
     while (std::getline(iss, line)) {
         line = Utils::trim(line);
-        if (line.empty() || line[0] == '#') continue;
+        if (line.empty() || line[0] == '#') 
+            continue;
         
         if (line.find("location ") == 0) {
             size_t pathStart = 9;
@@ -133,6 +140,11 @@ ServerConfig ConfigParser::parseServer(const std::string& serverBlock) {
             std::string locationPath = Utils::trim(line.substr(pathStart, pathEnd - pathStart));
             if (locationPath.empty())
                 throw std::runtime_error("Empty location path");
+
+            // Controlla se questa location è già stata definita
+            if (seenLocations[locationPath])
+                throw std::runtime_error("Duplicate location definition: " + locationPath);
+            seenLocations[locationPath] = true;
                 
             size_t start = serverBlock.find(line) + line.length();
             size_t end = Utils::findMatchingBrace(serverBlock, start);
@@ -143,9 +155,11 @@ ServerConfig ConfigParser::parseServer(const std::string& serverBlock) {
             std::string locationBlock = serverBlock.substr(start + 1, end - (start + 1));
             LocationConfig location(locationPath);
             parseLocation(locationBlock, location);
+            
             if (!validateLocation(location)) {
                 throw std::runtime_error("Invalid location configuration for path: " + locationPath);
             }
+            
             server.addLocation(location);
             iss.clear();
             iss.str(serverBlock.substr(end + 1));
@@ -153,21 +167,54 @@ ServerConfig ConfigParser::parseServer(const std::string& serverBlock) {
             parseServerDirective(line, server);
         }
     }
-    
+
+    // Verifica che le direttive obbligatorie siano presenti
+    if (!seenDirectives["host"])
+        throw std::runtime_error("Missing host directive in server block");
+    if (!seenDirectives["port"])
+        throw std::runtime_error("Missing port directive in server block");
+
+    // Verifica che ci sia almeno una location
+    if (server.getLocations().empty())
+        throw std::runtime_error("Server block must contain at least one location");
+
     return server;
 }
 
 void ConfigParser::parseServerDirective(const std::string& line, ServerConfig& server) {
-    if (line.find("host") == 0)
+    std::string directive;
+
+    if (line.find("host") == 0) {
+        directive = "host";
+        if (seenDirectives[directive])
+            throw std::runtime_error("Duplicate host directive in server block");
+        seenDirectives[directive] = true;
         parseHost(line, server);
-    else if (line.find("port") == 0)
+    }
+    else if (line.find("port") == 0) {
+        directive = "port";
+        if (seenDirectives[directive])
+            throw std::runtime_error("Duplicate port directive in server block");
+        seenDirectives[directive] = true;
         parsePort(line, server);
-    else if (line.find("server_name") == 0)
+    }
+    else if (line.find("server_name") == 0) {
+        directive = "server_name";
+        if (seenDirectives[directive])
+            throw std::runtime_error("Duplicate server_name directive in server block");
+        seenDirectives[directive] = true;
         parseServerName(line, server);
-    else if (line.find("error_page") == 0)
+    }
+    else if (line.find("error_page") == 0) {
         parseErrorPage(line, server);
-    else if (line.find("client_max_body_size") == 0)
+    }
+    else if (line.find("client_max_body_size") == 0) {
+        directive = "client_max_body_size";
+        if (seenDirectives[directive])
+            throw std::runtime_error("Duplicate client_max_body_size directive in server block");
+        seenDirectives[directive] = true;
         parseClientMaxBodySize(line, server);
+    }
     else
         throw std::runtime_error("Unknown server directive: " + line);
 }

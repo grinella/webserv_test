@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 #include <vector>
 #include <map>
@@ -8,8 +9,8 @@
 #include <unistd.h>
 #include "ServerConfig.hpp"
 #include "LocationConfig.hpp"
+#include "Utils.hpp"
 
-// Definizioni delle costanti di access se non esistono
 #ifndef F_OK
 #define F_OK 0
 #endif
@@ -23,20 +24,20 @@ private:
     std::string configFile;
     std::vector<ServerConfig> servers;
     std::map<std::string, bool> seenDirectives;
-    
+
     // Core parsing methods
     void parseFile();
     ServerConfig parseServer(const std::string& serverBlock);
     void parseLocation(const std::string& locationBlock, LocationConfig& location);
-    
-    // Helper methods for parsing specific directives
+
+    // Server directive parsers
     void parseServerDirective(const std::string& line, ServerConfig& server);
     void parseHost(const std::string& line, ServerConfig& server);
     void parsePort(const std::string& line, ServerConfig& server);
     void parseServerName(const std::string& line, ServerConfig& server);
     void parseErrorPage(const std::string& line, ServerConfig& server);
     void parseClientMaxBodySize(const std::string& line, ServerConfig& server);
-    
+
     // Location directive parsers
     void parseLocationDirective(const std::string& line, LocationConfig& location);
     void parseMethods(const std::string& line, LocationConfig& location);
@@ -45,16 +46,17 @@ private:
     void parseIndex(const std::string& line, LocationConfig& location);
     void parseCgiExt(const std::string& line, LocationConfig& location);
     void parseCgiPath(const std::string& line, LocationConfig& location);
-    
+    void parseRedirect(const std::string& line, LocationConfig& location);
+
     // Validation methods
     bool validateSyntax(const std::string& content);
     bool validateServer(const ServerConfig& server);
     bool validateLocation(const LocationConfig& location);
-    
+
 public:
     ConfigParser(const std::string& filename);
     ~ConfigParser();
-    
+
     const std::vector<ServerConfig>& getServers() const;
     void debugPrint() const;
 };

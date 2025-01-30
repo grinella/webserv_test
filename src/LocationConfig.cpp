@@ -2,7 +2,9 @@
 
 LocationConfig::LocationConfig(const std::string& locationPath) : 
     path(locationPath), 
-    autoindex(false) {}
+    autoindex(false),
+    redirect(""),
+    redirectCode(301) {}
 
 // Getters
 const std::string& LocationConfig::getPath() const { return path; }

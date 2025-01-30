@@ -44,10 +44,56 @@ std::string urlDecode(const std::string &encoded) {
     return decoded.str();
 }
 
+void Response::handleRedirect() {
+    const LocationConfig* loc = request->getMatchedLocation();
+    if (!loc) {
+        std::cout << "No matched location for redirect" << std::endl;
+        return;
+    }
+
+    std::cout << "Checking redirect for location: " << loc->getPath() << std::endl;
+    if (!loc->hasRedirect()) {
+        std::cout << "No redirect found for this location" << std::endl;
+        return;
+    }
+
+    std::cout << "Processing redirect - Code: " << loc->getRedirectCode() 
+              << " Target: " << loc->getRedirect() << std::endl;
+
+    // Imposta lo status code e il messaggio appropriati
+    statusCode = loc->getRedirectCode();
+    if (statusCode == 301) {
+        statusMessage = "Moved Permanently";
+    } else {
+        statusMessage = "Found";
+    }
+
+    // Imposta l'header Location per la redirezione
+    headers["Location"] = loc->getRedirect();
+
+    // Crea un semplice body HTML
+    std::stringstream body_ss;
+    body_ss << "<html><head><title>" << statusCode << " " << statusMessage << "</title></head>";
+    body_ss << "<body><h1>" << statusCode << " " << statusMessage << "</h1>";
+    body_ss << "<p>The document has been moved to <a href=\"" << loc->getRedirect() << "\">";
+    body_ss << loc->getRedirect() << "</a></p></body></html>";
+    
+    body = body_ss.str();
+    headers["Content-Type"] = "text/html";
+}
+
 Response::Response(Request* req) : statusCode(200), statusMessage("OK"), bytesSent(0) {
     initMimeTypes();
     request = req;
     
+    // Controlla prima se c'è una redirezione
+    const LocationConfig* loc = req->getMatchedLocation();
+    if (loc && loc->hasRedirect()) {
+        std::cout << "Found redirect in location " << loc->getPath() << std::endl;
+        handleRedirect();
+        return;
+    }
+
     if (!req->getMatchedLocation()) {
         serveErrorPage(404);
         return;
@@ -55,6 +101,12 @@ Response::Response(Request* req) : statusCode(200), statusMessage("OK"), bytesSe
 
     if (!req->isMethodAllowed()) {
         serveErrorPage(405);
+        return;
+    }
+
+    // Check for redirection first
+    if (req->getMatchedLocation()->hasRedirect()) {
+        handleRedirect();
         return;
     }
 

@@ -344,6 +344,7 @@ bool ConfigParser::validateServer(const ServerConfig& server) {
 }
 
 void ConfigParser::parseLocationDirective(const std::string& line, LocationConfig& location) {
+    std::cout << "Parsing location directive: " << line << std::endl;  // Debug log
     if (line.find("allow_methods") == 0)
         parseMethods(line, location);
     else if (line.find("autoindex") == 0)
@@ -356,6 +357,10 @@ void ConfigParser::parseLocationDirective(const std::string& line, LocationConfi
         parseCgiExt(line, location);
     else if (line.find("cgi_path") == 0)
         parseCgiPath(line, location);
+    else if (line.find("return") == 0) {
+        std::cout << "Found return directive: " << line << std::endl;  // Debug log
+        parseRedirect(line, location);
+    }
     else
         throw std::runtime_error("Unknown location directive: " + line);
 }
@@ -406,6 +411,35 @@ void ConfigParser::parseCgiPath(const std::string& line, LocationConfig& locatio
     for (size_t i = 0; i < paths.size(); ++i) {
         location.addCgiPath(paths[i]);
     }
+}
+
+void ConfigParser::parseRedirect(const std::string& line, LocationConfig& location) {
+    std::string value = Utils::getDirectiveValue(line, "return");
+    if (value.empty())
+        throw std::runtime_error("Empty redirect value");
+
+    std::vector<std::string> parts = Utils::split(value, ' ');
+    int code;
+    std::string url;
+
+    if (parts.size() == 1) {
+        // Solo URL, usa 301 come default
+        code = 301;
+        url = parts[0];
+    } else if (parts.size() == 2) {
+        // Codice e URL
+        code = std::atoi(parts[0].c_str());
+        url = parts[1];
+        
+        // Verifica codice valido
+        if (code != 301 && code != 302) {
+            throw std::runtime_error("Invalid redirect code. Must be 301 or 302");
+        }
+    } else {
+        throw std::runtime_error("Invalid redirect syntax");
+    }
+
+    location.setRedirect(url, code);
 }
 
 void ConfigParser::debugPrint() const {

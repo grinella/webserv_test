@@ -329,7 +329,8 @@ bool ConfigParser::validateServer(const ServerConfig& server) {
             path = "." + path;
         }
         if (access(path.c_str(), F_OK) == -1) {
-            throw std::runtime_error("Error page not found: " + it->second);
+            // File non trovato o non accessibile
+            return false;
         }
     }
 

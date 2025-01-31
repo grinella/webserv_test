@@ -40,6 +40,8 @@ private:
    std::string executeCGI(const std::string& interpreter, const std::string& scriptPath,
                         const std::map<std::string, std::string>& env);
 
+   static const int CGI_TIMEOUT = 10; // Timeout in secondi
+
    std::string parseMultipartData(const std::string& boundary);
    void initMimeTypes();
    std::string intToString(int number);

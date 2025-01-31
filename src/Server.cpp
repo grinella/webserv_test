@@ -77,21 +77,17 @@ void Server::handleRequest(int clientFd) {
     try {
         while (true) {
             ssize_t bytes = read(clientFd, buffer, maxBodySize);
-            if (bytes <= 0) {
-                if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                    break;
-                }
+            if (bytes == 0) {  // Connessione chiusa dal client
                 delete[] buffer;
                 removeClient(clientFd);
                 return;
             }
-
+            if (bytes < 0) {  // Errore di lettura o non bloccante
+                break;
+            }
+            
             buffer[bytes] = '\0';
-            std::cout << "Read " << bytes << " bytes" << std::endl;
-
-            // Aggiungi i nuovi dati alla richiesta
             if (!request->parse(std::string(buffer, bytes))) {
-                // Se il parsing non è completo, continua a leggere
                 continue;
             }
 
@@ -156,45 +152,17 @@ void Server::removeClient(int clientFd) {
     responses.erase(clientFd);
 }
 
-void Server::checkTimeouts(time_t now) {
-    std::map<int, Request*>::iterator it = requests.begin();
-
-    while (it != requests.end()) {
-        int fd = it->first;
-        Request* req = it->second;
-
-        if (difftime(now, req->startTime) > 5) { // Timeout di 5 secondi
-            std::cout << "Client " << fd << " timeout! Inviando 408..." << std::endl;
-            std::string response = "HTTP/1.1 408 Request Timeout\r\nConnection: close\r\n\r\n";
-            send(fd, response.c_str(), response.size(), 0);
-            close(fd);
-            delete req;
-
-            // `erase()` invalida l'iteratore corrente, quindi bisogna aggiornarlo correttamente
-            std::map<int, Request*>::iterator toErase = it;
-            ++it;  // Sposta l'iteratore prima di cancellare
-            requests.erase(toErase);
-        } else {
-            ++it;
-        }
-    }
-}
-
 void Server::run() {
     epoll_event events[MAX_EVENTS];
 
     while (true) {
-        int nfds = epoll_wait(epollFd, events, MAX_EVENTS, 1000); // Timeout di 1 secondo per il controllo
-        time_t now = time(NULL);
-
+        int nfds = epoll_wait(epollFd, events, MAX_EVENTS, -1); // Rimosso il timeout
+        
         if (nfds == -1) {
             if (errno == EINTR)
                 continue;
             throw std::runtime_error("epoll_wait failed");
         }
-
-        // 🔹 Controllo timeout prima di gestire gli eventi
-        checkTimeouts(now);
 
         for (int n = 0; n < nfds; ++n) {
             int fd = events[n].data.fd;

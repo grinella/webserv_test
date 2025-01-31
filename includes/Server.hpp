@@ -25,7 +25,6 @@ private:
    void handleRequest(int clientFd);
    void handleResponse(int clientFd);
    void removeClient(int clientFd);
-   void checkTimeouts(time_t now);
 
 public:
    Server(const std::vector<ServerConfig>& configs);

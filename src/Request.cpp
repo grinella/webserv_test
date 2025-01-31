@@ -248,8 +248,21 @@ void Request::handlePost() {
 
 void Request::parseStartLine(const std::string& line) {
     std::istringstream iss(line);
-    std::cout << "line=" << line << std::endl;
-    iss >> method >> uri >> httpVersion;
+    iss >> method;
+    
+    // Parse URI and query string
+    std::string fullUri;
+    iss >> fullUri;
+    size_t queryPos = fullUri.find('?');
+    if (queryPos != std::string::npos) {
+        uri = fullUri.substr(0, queryPos);
+        queryString = fullUri.substr(queryPos + 1);
+    } else {
+        uri = fullUri;
+        queryString = "";
+    }
+    
+    iss >> httpVersion;
     if (method.empty() || uri.empty() || httpVersion.empty())
         state = ERROR;
 }

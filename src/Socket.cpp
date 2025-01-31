@@ -37,26 +37,26 @@ void Socket::setNonBlocking() {
 }
 
 void Socket::bind() {
-   int opt = 1;
-   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
+    int opt = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
        throw std::runtime_error("Failed to set socket options");
 
-   if (::bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
+    if (::bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
        throw std::runtime_error("Failed to bind socket");
 }
 
 void Socket::listen(int backlog) {
-   if (::listen(fd, backlog) == -1)
+    if (::listen(fd, backlog) == -1)
        throw std::runtime_error("Failed to listen on socket");
 }
 
 int Socket::accept() {
-   struct sockaddr_in clientAddr;
-   socklen_t addrLen = sizeof(clientAddr);
-   
-   int clientFd = ::accept(fd, (struct sockaddr*)&clientAddr, &addrLen);
-   if (clientFd == -1 && errno != EAGAIN && errno != EWOULDBLOCK)
-       throw std::runtime_error("Failed to accept connection");
-       
-   return clientFd;
+    struct sockaddr_in clientAddr;
+    socklen_t addrLen = sizeof(clientAddr);
+    
+    int clientFd = ::accept(fd, (struct sockaddr*)&clientAddr, &addrLen);
+    if (clientFd < 0)  // Qualsiasi errore viene gestito come fallimento
+        return -1;
+        
+    return clientFd;
 }

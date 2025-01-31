@@ -1,4 +1,5 @@
 #include "../includes/Response.hpp"
+#include "../includes/Utils.hpp"
 #include <sstream>
 #include <unistd.h>
 #include <fstream>
@@ -163,18 +164,19 @@ void Response::buildResponse() {
 }
 
 bool Response::send(int fd) {
-   if (response.empty())
-       buildResponse();
-       
-   ssize_t sent = write(fd, response.c_str() + bytesSent, response.length() - bytesSent);
-   if (sent == -1)
-       return false;
+    if (response.empty())
+        buildResponse();
     
-    // std::cout << response << std::endl;
-   bytesSent += sent;
-   // cout true or false
-   
-   return bytesSent >= response.length();
+    size_t remaining = response.length() - bytesSent;
+    if (remaining == 0)
+        return true;
+        
+    ssize_t sent = write(fd, response.c_str() + bytesSent, remaining);
+    if (sent <= 0)
+        return false;
+        
+    bytesSent += sent;
+    return bytesSent >= response.length();
 }
 
 void Response::setContentType(const std::string& path) {
@@ -386,19 +388,37 @@ const std::string& Request::getUri() const {
 }
 
 void Response::setupCGIEnv(std::map<std::string, std::string>& env, const std::string& scriptPath) {
+    std::string path = request->getResolvedPath();
+    std::string documentRoot = "./www"; // Configurabile dal config file
+
     env["GATEWAY_INTERFACE"] = "CGI/1.1";
     env["SERVER_PROTOCOL"] = "HTTP/1.1";
     env["REQUEST_METHOD"] = request->getMethod();
     env["SCRIPT_FILENAME"] = scriptPath;
     env["SCRIPT_NAME"] = request->getUri();
     env["PATH_INFO"] = "";
-    env["PATH_TRANSLATED"] = scriptPath;
-    env["QUERY_STRING"] = "";  // TODO: Implementare il parsing della query string
-    env["CONTENT_TYPE"] = "text/html";
-    env["CONTENT_LENGTH"] = "0";
-    
-    // Se ci sono headers della richiesta specifici per CGI, aggiungili qui
-    // HTTP_* headers
+    env["PATH_TRANSLATED"] = path;
+    env["QUERY_STRING"] = request->getQueryString();
+    env["REMOTE_ADDR"] = "127.0.0.1"; // O l'IP reale del client
+    env["SERVER_NAME"] = "webserv";
+    env["SERVER_PORT"] = "8080"; // Porta configurata
+    env["SERVER_SOFTWARE"] = "webserv/1.0";
+    env["DOCUMENT_ROOT"] = documentRoot;
+
+    if (request->getMethod() == "POST") {
+        env["CONTENT_LENGTH"] = Utils::U_intToString(request->getBody().length());
+        env["CONTENT_TYPE"] = request->getHeader("Content-Type");
+    }
+
+    // Aggiungi altri headers HTTP come variabili d'ambiente
+    std::map<std::string, std::string> headers = request->getAllHeaders();
+    for (std::map<std::string, std::string>::const_iterator it = headers.begin();
+         it != headers.end(); ++it) {
+        std::string name = "HTTP_" + it->first;
+        std::replace(name.begin(), name.end(), '-', '_');
+        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+        env[name] = it->second;
+    }
 }
 
 char* Response::myStrdup(const char* str) {
@@ -410,36 +430,45 @@ char* Response::myStrdup(const char* str) {
 
 std::string Response::executeCGI(const std::string& interpreter, const std::string& scriptPath,
                                 const std::map<std::string, std::string>& env) {
-    int pipefd[2];
-    if (pipe(pipefd) == -1) {
-        throw std::runtime_error("Failed to create pipe");
+    int input_pipe[2];  // Per inviare dati al CGI
+    int output_pipe[2]; // Per ricevere dati dal CGI
+    
+    if (pipe(input_pipe) < 0 || pipe(output_pipe) < 0) {
+        throw std::runtime_error("Failed to create pipes");
     }
 
     pid_t pid = fork();
     if (pid == -1) {
-        close(pipefd[0]);
-        close(pipefd[1]);
+        close(input_pipe[0]); close(input_pipe[1]);
+        close(output_pipe[0]); close(output_pipe[1]);
         throw std::runtime_error("Fork failed");
     }
 
-    if (pid == 0) { // Child process
-        close(pipefd[0]); // Close read end
-        dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
-        close(pipefd[1]);
+    if (pid == 0) { // Processo figlio
+        // Reindirizza stdin al pipe di input
+        close(input_pipe[1]);
+        dup2(input_pipe[0], STDIN_FILENO);
+        close(input_pipe[0]);
 
-        // Prepare environment variables for execve
+        // Reindirizza stdout al pipe di output
+        close(output_pipe[0]);
+        dup2(output_pipe[1], STDOUT_FILENO);
+        close(output_pipe[1]);
+
+        // Prepara l'ambiente
         std::vector<std::string> envStrs;
-        for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end(); ++it) {
+        for (std::map<std::string, std::string>::const_iterator it = env.begin(); 
+             it != env.end(); ++it) {
             envStrs.push_back(it->first + "=" + it->second);
         }
 
         char** envp = new char*[envStrs.size() + 1];
         for (size_t i = 0; i < envStrs.size(); ++i) {
-            envp[i] = myStrdup(envStrs[i].c_str());
+            envp[i] = strdup(envStrs[i].c_str());
         }
         envp[envStrs.size()] = NULL;
 
-        // Prepare arguments for execve
+        // Esegui il CGI
         char* const args[] = {
             const_cast<char*>(interpreter.c_str()),
             const_cast<char*>(scriptPath.c_str()),
@@ -447,38 +476,62 @@ std::string Response::executeCGI(const std::string& interpreter, const std::stri
         };
 
         execve(interpreter.c_str(), args, envp);
-        
-        // If execve fails
-        for (size_t i = 0; envp[i] != NULL; ++i) {
-            delete[] envp[i];
-        }
-        delete[] envp;
-        
-        exit(1);
+        exit(1); // Se execve fallisce
     }
 
-    // Parent process
-    close(pipefd[1]); // Close write end
+    // Processo padre
+    close(input_pipe[0]);
+    close(output_pipe[1]);
 
-    // Read output from pipe
+    // Invia i dati POST se necessario
+    if (request->getMethod() == "POST") {
+        const std::string& body = request->getBody();
+        write(input_pipe[1], body.c_str(), body.length());
+    }
+    close(input_pipe[1]);
+
+    // Gestione del timeout
+    time_t startTime = time(NULL);
+    const int CGI_TIMEOUT = 30; // 30 secondi di timeout
+    
     std::string output;
     char buffer[4096];
-    ssize_t bytes_read;
     
-    while ((bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+    while (true) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(output_pipe[0], &readfds);
+
+        struct timeval tv;
+        tv.tv_sec = 1; // Check ogni secondo
+        tv.tv_usec = 0;
+
+        int ready = select(output_pipe[0] + 1, &readfds, NULL, NULL, &tv);
+        
+        if (ready < 0) {
+            break;
+        }
+        
+        if (ready == 0) {
+            if (difftime(time(NULL), startTime) > CGI_TIMEOUT) {
+                kill(pid, SIGTERM);
+                throw std::runtime_error("CGI execution timeout");
+            }
+            continue;
+        }
+
+        ssize_t bytes_read = read(output_pipe[0], buffer, sizeof(buffer) - 1);
+        if (bytes_read <= 0) break;
+        
         buffer[bytes_read] = '\0';
         output += buffer;
     }
-    
-    close(pipefd[0]);
 
-    // Wait for child process
+    close(output_pipe[0]);
+
+    // Attendi la terminazione del processo figlio
     int status;
     waitpid(pid, &status, 0);
-
-    if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-        throw std::runtime_error("CGI script execution failed");
-    }
 
     return output;
 }

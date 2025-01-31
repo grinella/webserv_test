@@ -48,6 +48,8 @@ private:
 
    size_t headerLength;
    bool headerComplete;
+
+   std::string queryString;
    // size_t contentLength;
 
    void parseStartLine(const std::string& line);
@@ -81,4 +83,16 @@ public:
 
    // Timeout
    time_t startTime;
+
+   const std::string& getHeader(const std::string& key) const {
+        static const std::string empty;
+        std::map<std::string, std::string>::const_iterator it = headers.find(key);
+        return (it != headers.end()) ? it->second : empty;
+   }
+    
+    const std::string& getQueryString() const { return queryString; }
+
+   const std::map<std::string, std::string>& getAllHeaders() const { 
+        return headers; 
+   }
 };

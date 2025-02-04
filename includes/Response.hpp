@@ -10,41 +10,45 @@
 class Response {
 private:
 
-   struct EntryCompare {
-       bool operator()(const std::pair<std::string, struct stat>& a,
-                      const std::pair<std::string, struct stat>& b) const {
-           return a.first < b.first;
-       }
-   };
-   
-   Request* request;
-   int statusCode;
-   std::string statusMessage;
-   std::map<std::string, std::string> headers;
-   std::string body;
-   size_t bytesSent;
-   std::string response;
-   static std::map<std::string, std::string> mimeTypes;
+    struct EntryCompare {
+        bool operator()(const std::pair<std::string, struct stat>& a,
+                        const std::pair<std::string, struct stat>& b) const {
+            return a.first < b.first;
+        }
+    };
 
-   void buildResponse();
-   void setContentType(const std::string& path);
-   bool serveStaticFile(const std::string& path);
-   void serveErrorPage(int code);
-   void serveCGI(Request* req);
-   void handleRedirect();
-   bool isCGIRequest(const std::string& path);
-   char* myStrdup(const char* str);
-   void generateDirectoryListing(const std::string& path);
-   std::string getCGIInterpreter(const std::string& extension);
-   void setupCGIEnv(std::map<std::string, std::string>& env, const std::string& scriptPath);
-   std::string executeCGI(const std::string& interpreter, const std::string& scriptPath,
+    Request* request;
+    int statusCode;
+    std::string statusMessage;
+    std::map<std::string, std::string> headers;
+    std::string body;
+    size_t bytesSent;
+    std::string response;
+    static std::map<std::string, std::string> mimeTypes;
+
+    void buildResponse();
+    void setContentType(const std::string& path);
+    bool serveStaticFile(const std::string& path);
+    void serveErrorPage(int code);
+    void serveCGI(Request* req);
+    void handleRedirect();
+    bool isCGIRequest(const std::string& path);
+    char* myStrdup(const char* str);
+    void generateDirectoryListing(const std::string& path);
+    std::string getCGIInterpreter(const std::string& extension);
+    void setupCGIEnv(std::map<std::string, std::string>& env, const std::string& scriptPath);
+    std::string executeCGI(const std::string& interpreter, const std::string& scriptPath,
                         const std::map<std::string, std::string>& env);
 
-   static const int CGI_TIMEOUT = 10; // Timeout in secondi
+    void parseHeaders(const std::string& headerSection);
+    void processOutput(const std::string& output);
+    void setPOSTData(const std::string& data);
 
-   std::string parseMultipartData(const std::string& boundary);
-   void initMimeTypes();
-   std::string intToString(int number);
+    static const int CGI_TIMEOUT = 10; // Timeout in secondi
+
+    std::string parseMultipartData(const std::string& boundary);
+    void initMimeTypes();
+    std::string intToString(int number);
 
 public:
     explicit Response(Request* request);

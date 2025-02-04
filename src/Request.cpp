@@ -250,13 +250,14 @@ void Request::parseStartLine(const std::string& line) {
     std::istringstream iss(line);
     iss >> method;
     
-    // Parse URI and query string
     std::string fullUri;
     iss >> fullUri;
     size_t queryPos = fullUri.find('?');
     if (queryPos != std::string::npos) {
         uri = fullUri.substr(0, queryPos);
         queryString = fullUri.substr(queryPos + 1);
+        // URL decode della query string
+        queryString = urlDecode_Request(queryString);
     } else {
         uri = fullUri;
         queryString = "";

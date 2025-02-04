@@ -396,27 +396,25 @@ void Response::setupCGIEnv(std::map<std::string, std::string>& env, const std::s
     env["REQUEST_METHOD"] = request->getMethod();
     env["SCRIPT_FILENAME"] = scriptPath;
     env["SCRIPT_NAME"] = request->getUri();
-    env["PATH_INFO"] = "";
-    env["PATH_TRANSLATED"] = path;
     env["QUERY_STRING"] = request->getQueryString();
-    env["REMOTE_ADDR"] = "127.0.0.1"; // O l'IP reale del client
-    env["SERVER_NAME"] = "webserv";
-    env["SERVER_PORT"] = "8080"; // Porta configurata
+    env["REMOTE_ADDR"] = "127.0.0.1";
+    env["REQUEST_URI"] = request->getUri();
     env["SERVER_SOFTWARE"] = "webserv/1.0";
-    env["DOCUMENT_ROOT"] = documentRoot;
+    env["PATH_INFO"] = "";
+    env["PATH_TRANSLATED"] = scriptPath;
 
     if (request->getMethod() == "POST") {
-        env["CONTENT_LENGTH"] = Utils::U_intToString(request->getBody().length());
         env["CONTENT_TYPE"] = request->getHeader("Content-Type");
+        env["CONTENT_LENGTH"] = Utils::U_intToString(request->getBody().length());
+        env["HTTP_CONTENT_TYPE"] = request->getHeader("Content-Type");
+        env["HTTP_CONTENT_LENGTH"] = Utils::U_intToString(request->getBody().length());
     }
 
-    // Aggiungi altri headers HTTP come variabili d'ambiente
-    std::map<std::string, std::string> headers = request->getAllHeaders();
-    for (std::map<std::string, std::string>::const_iterator it = headers.begin();
-         it != headers.end(); ++it) {
+    // Aggiungi headers HTTP come variabili d'ambiente
+    const std::map<std::string, std::string>& headers = request->getAllHeaders();
+    for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it) {
         std::string name = "HTTP_" + it->first;
         std::replace(name.begin(), name.end(), '-', '_');
-        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
         env[name] = it->second;
     }
 }
@@ -539,57 +537,78 @@ std::string Response::executeCGI(const std::string& interpreter, const std::stri
 void Response::serveCGI(Request* req) {
     try {
         std::string path = req->getResolvedPath();
-        size_t dot = path.find_last_of(".");
-        if (dot == std::string::npos) {
-            throw std::runtime_error("No file extension found");
-        }
-
-        std::string extension = path.substr(dot);
+        std::string extension = path.substr(path.find_last_of("."));
         std::string interpreter = getCGIInterpreter(extension);
-        if (interpreter.empty()) {
-            throw std::runtime_error("No interpreter found for extension: " + extension);
-        }
-
+        
         std::map<std::string, std::string> env;
         setupCGIEnv(env, path);
 
-        std::string output = executeCGI(interpreter, path, env);
-        
-        // Parse CGI output (separate headers from body)
-        size_t headerEnd = output.find("\r\n\r\n");
-        if (headerEnd == std::string::npos) {
-            headerEnd = output.find("\n\n");
-        }
-        
-        if (headerEnd != std::string::npos) {
-            // Process CGI headers
-            std::string headers = output.substr(0, headerEnd);
-            std::istringstream headerStream(headers);
-            std::string line;
+        if (req->getMethod() == "POST") {
+            env["CONTENT_LENGTH"] = Utils::U_intToString(req->getBody().length());
+            env["CONTENT_TYPE"] = req->getHeader("Content-Type");
             
-            while (std::getline(headerStream, line) && !line.empty()) {
-                size_t colonPos = line.find(':');
-                if (colonPos != std::string::npos) {
-                    std::string key = line.substr(0, colonPos);
-                    std::string value = line.substr(colonPos + 1);
-                    // Trim whitespace
-                    value.erase(0, value.find_first_not_of(" \t"));
-                    this->headers[key] = value;
-                }
+            if (!req->getBody().empty()) {
+                setPOSTData(req->getBody());  // Nuovo metodo da implementare
             }
-            
-            body = output.substr(headerEnd + 4); // Skip \r\n\r\n
-        } else {
-            // No headers found, treat everything as body
-            body = output;
+        }
+
+        std::string output = executeCGI(interpreter, path, env);
+        if (output.empty()) {
+            throw std::runtime_error("Empty CGI output");
+        }
+        processOutput(output);
+        if (!headers.count("Content-Type")) {
             headers["Content-Type"] = "text/html";
         }
-        
-        statusCode = 200;
-        statusMessage = "OK";
+
     } catch (const std::exception& e) {
         std::cerr << "CGI Error: " << e.what() << std::endl;
         serveErrorPage(500);
+    }
+}
+
+void Response::setPOSTData(const std::string& data) {
+    int pipes[2];
+    if (pipe(pipes) == -1) {
+        throw std::runtime_error("Failed to create pipe for POST data");
+    }
+    write(pipes[1], data.c_str(), data.length());
+    close(pipes[1]);
+    dup2(pipes[0], STDIN_FILENO);
+    close(pipes[0]);
+}
+
+void Response::processOutput(const std::string& output) {
+    std::string::size_type headerEnd = output.find("\r\n\r\n");
+    if (headerEnd == std::string::npos) headerEnd = output.find("\n\n");
+    
+    if (headerEnd != std::string::npos) {
+        parseHeaders(output.substr(0, headerEnd));
+        body = output.substr(headerEnd + (output[headerEnd + 1] == '\n' ? 2 : 4));
+    } else {
+        headers["Content-Type"] = "text/html";
+        body = output;
+    }
+    
+    statusCode = 200;
+    statusMessage = "OK";
+}
+
+void Response::parseHeaders(const std::string& headerSection) {
+    std::istringstream headerStream(headerSection);
+    std::string line;
+    
+    while (std::getline(headerStream, line)) {
+        if (line.empty() || line == "\r") continue;
+        
+        size_t colonPos = line.find(':');
+        if (colonPos != std::string::npos) {
+            std::string key = line.substr(0, colonPos);
+            std::string value = line.substr(colonPos + 1);
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of("\r") + 1);
+            headers[key] = value;
+        }
     }
 }
 

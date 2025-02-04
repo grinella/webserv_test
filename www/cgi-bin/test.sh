@@ -1,6 +1,6 @@
 #!/bin/bash
 
-header "Content-Type: text/html"
+echo "Content-Type: text/html"
 echo ""
 echo "<html><body>"
 echo "<h1>Hello from Shell CGI!</h1>"

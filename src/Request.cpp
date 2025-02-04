@@ -208,7 +208,7 @@ void Request::handlePost() {
         postStatus = 400;
         return;
     }
-    contentEnd -= 4; // Per rimuovere \r\n-- prima del boundary
+    contentEnd -= 2; // Per rimuovere \r\n-- prima del boundary
 
     // Estrai il contenuto del file
     std::string fileContent = body.substr(contentStart, contentEnd - contentStart);

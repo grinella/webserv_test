@@ -247,6 +247,7 @@ void Response::serveErrorPage(int code) {
    switch (code) {
        case 404: statusMessage = "Not Found"; break;
        case 405: statusMessage = "Method Not Allowed"; break;
+       case 408: statusMessage = "Timeout"; break;
        case 413: statusMessage = "Payload Too Large"; break;
        case 500: statusMessage = "Internal Server Error"; break;
        default: statusMessage = "Unknown Error";
@@ -443,20 +444,18 @@ std::string Response::executeCGI(const std::string& interpreter, const std::stri
     }
 
     if (pid == 0) { // Processo figlio
-        // Reindirizza stdin al pipe di input
+        // Reindirizza stdin e stdout ai pipe
         close(input_pipe[1]);
         dup2(input_pipe[0], STDIN_FILENO);
         close(input_pipe[0]);
 
-        // Reindirizza stdout al pipe di output
         close(output_pipe[0]);
         dup2(output_pipe[1], STDOUT_FILENO);
         close(output_pipe[1]);
 
         // Prepara l'ambiente
         std::vector<std::string> envStrs;
-        for (std::map<std::string, std::string>::const_iterator it = env.begin(); 
-             it != env.end(); ++it) {
+        for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end(); ++it) {
             envStrs.push_back(it->first + "=" + it->second);
         }
 
@@ -477,60 +476,44 @@ std::string Response::executeCGI(const std::string& interpreter, const std::stri
         exit(1); // Se execve fallisce
     }
 
-    // Processo padre
+    // Processo padre: monitora il figlio e gestisce il timeout
     close(input_pipe[0]);
+    close(input_pipe[1]);
     close(output_pipe[1]);
 
-    // Invia i dati POST se necessario
-    if (request->getMethod() == "POST") {
-        const std::string& body = request->getBody();
-        write(input_pipe[1], body.c_str(), body.length());
-    }
-    close(input_pipe[1]);
+    int status;
+    int timeout = 10;  // Timeout in secondi
+    bool process_terminated = false;
 
-    // Gestione del timeout
-    time_t startTime = time(NULL);
-    const int CGI_TIMEOUT = 30; // 30 secondi di timeout
-    
-    std::string output;
-    char buffer[4096];
-    
-    while (true) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(output_pipe[0], &readfds);
+    for (int i = 0; i < timeout; ++i) {
+        sleep(1);
+        pid_t result = waitpid(pid, &status, WNOHANG);
 
-        struct timeval tv;
-        tv.tv_sec = 1; // Check ogni secondo
-        tv.tv_usec = 0;
-
-        int ready = select(output_pipe[0] + 1, &readfds, NULL, NULL, &tv);
-        
-        if (ready < 0) {
+        if (result == pid) { // Il processo è terminato
+            process_terminated = true;
             break;
         }
-        
-        if (ready == 0) {
-            if (difftime(time(NULL), startTime) > CGI_TIMEOUT) {
-                kill(pid, SIGTERM);
-                throw std::runtime_error("CGI execution timeout");
-            }
-            continue;
-        }
+    }
 
-        ssize_t bytes_read = read(output_pipe[0], buffer, sizeof(buffer) - 1);
-        if (bytes_read <= 0) break;
-        
-        buffer[bytes_read] = '\0';
+    if (!process_terminated) {
+        std::cerr << "⚠️ Timeout raggiunto! Terminazione del processo CGI...\n";
+        kill(pid, SIGKILL);  // Termina il processo CGI
+        waitpid(pid, &status, 0);  // Evita processi zombie
+
+        serveErrorPage(408);
+        return body;
+    }
+
+    // Lettura dell'output del CGI
+    char buffer[1024];
+    std::string output;
+    ssize_t bytesRead;
+    while ((bytesRead = read(output_pipe[0], buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytesRead] = '\0';
         output += buffer;
     }
 
     close(output_pipe[0]);
-
-    // Attendi la terminazione del processo figlio
-    int status;
-    waitpid(pid, &status, 0);
-
     return output;
 }
 
